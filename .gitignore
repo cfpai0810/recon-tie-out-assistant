@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+venv/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+output/
+cv_bullets.txt
+debrief_log.txt
