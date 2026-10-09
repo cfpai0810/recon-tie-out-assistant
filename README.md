@@ -401,7 +401,7 @@ python-dotenv . pytest
 | 3 | Anomaly Detection and Alert Agent | Complete |
 | 4 | NL Scenario Modelling Copilot | Complete |
 | 5 | Reconciliation and Tie-Out Assistant | This project |
-| 6 | Agentic Board Pack Generator | Planned |
+| 6 | Board Pack Generator | Complete |
 | 7 | Planning-to-Warehouse-to-LLM Pipeline | Planned |
 | 8 | 13-Week Cash Flow Forecasting Agent | Planned |
 | 9 | Multi-Entity Consolidation and FX Engine | Planned |
