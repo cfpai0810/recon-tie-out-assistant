@@ -2511,3 +2511,36 @@ class TestExampleTab:
         at.switch_page("pages/2_Reconciliation.py").run()
         assert not at.exception
         assert _tab_sets(at.main)[0].proto.tab_container.default_tab_index == 0
+
+
+# ── STEP 3: THE PAGE'S SIGN-OFF LINE COUNTS LIKE THE PDF ────────────
+
+class TestSignOffCount:
+    """The sign-off line counts open breaks as the PDF counts open items."""
+
+    def test_fix_page_signoff_counts_like_the_pdf(self):
+        from streamlit.testing.v1 import AppTest
+        from src.step6_resolve import _resolution_from_choice
+        from src.step7_record import build_pdf_bytes
+        # INV-2214 adjusted by 1.00 of its 72.00, CHG-Q2 under investigation,
+        # and one timing difference left with no resolution: three open items.
+        state = _sample_resolved(1.00)
+        chg = next(b for b in state.breaks
+                   if any(r.reference == "CHG-Q2" for r in b.side_a_records))
+        state.resolutions[chg.stable_break_key] = _resolution_from_choice(
+            "I", "Ask the bank", None, chg)
+        left = next(b for b in state.breaks
+                    if state.resolutions[b.stable_break_key].resolution_type
+                    == ResolutionType.ACCEPT_AS_TIMING)
+        del state.resolutions[left.stable_break_key]
+        pdf = _pdf_text(build_pdf_bytes(state))
+        assert "This is a working copy, 3 open items, not yet signed off" in pdf
+
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180)
+        at.session_state["p5_resolutions"] = dict(state.resolutions)
+        at.session_state["reconciled"] = True
+        at.run()
+        assert not at.exception
+        assert [i.value for i in at.info if "still open" in i.value] == [
+            "3 breaks still open. You can still sign off; the report will "
+            "note them as unresolved."]

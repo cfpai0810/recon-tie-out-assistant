@@ -379,6 +379,20 @@ def _render_position_panel(state):
             n_resolved, n_total, "s" if n_total != 1 else "", still))
 
 
+def _open_item_count(state):
+    """Breaks still open, counted as the PDF report counts its open items: no
+    resolution yet, under investigation, or adjusted by less than the break."""
+    count = 0
+    for brk in state.breaks:
+        res = state.resolutions.get(brk.stable_break_key)
+        if res is None or res.resolution_type == ResolutionType.INVESTIGATE:
+            count += 1
+        elif (res.resolution_type == ResolutionType.ADJUST
+              and adjusted_part(brk, res) != Decimal(str(brk.difference))):
+            count += 1
+    return count
+
+
 # =============================================================================
 # RESOLUTION STATE (session-scoped)
 # =============================================================================
@@ -977,9 +991,7 @@ with tab_live:
             st.success(
                 "Reconciliation signed off: {}".format(signed_off_at))
         else:
-            n_unresolved = sum(
-                1 for b in recon_state.breaks
-                if b.stable_break_key not in recon_state.resolutions)
+            n_unresolved = _open_item_count(recon_state)
             if n_unresolved > 0:
                 st.info(
                     "{} break{} still open. You can still sign off; "
