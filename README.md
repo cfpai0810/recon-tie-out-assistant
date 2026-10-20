@@ -81,7 +81,8 @@ and European comma-decimal `1.234,56` are all handled. A value that
 cannot be parsed is skipped with a note, not silently treated as zero.
 
 **Dates.** ISO (`2026-06-15`), day-first (`15/06/2026`), month-first
-(`06/15/2026`), short month name (`15-Jun-2026`, `15 Jun 2026`), full
+(`06/15/2026`, tried only after day-first, so `06/05/2026` is read as
+6 May), short month name (`15-Jun-2026`, `15 Jun 2026`), full
 month name (`15 June 2026`), US with comma (`Jun 15, 2026`), and
 slash-month (`15/Jun/2026`).
 
@@ -111,7 +112,7 @@ could not resolve.
 
 | Precedence | Rule | What it matches |
 |:---:|-------|-----------------|
-| 1 | Exact key | Same reference, same date, same amount |
+| 1 | Exact key | Same reference, same direction, same amount (the date only breaks ties) |
 | 2 | Within tolerance | Same reference, amount difference within the tolerance bound |
 | 3 | Amount mismatch | Same reference, different amount |
 | 4 | Reference mismatch | Same amount (within tolerance), different reference |
@@ -132,7 +133,7 @@ All figures below are teaching examples, not the sample data.
 | Bank (A) | INV-100 | 10 Jun | -500.00 |
 | Book (B) | INV-100 | 10 Jun | -500.00 |
 
-Same reference, date, and amount. The cleanest pairing.
+Same reference, direction, and amount. The cleanest pairing.
 
 **Rule 2: Within tolerance** (match)
 
@@ -263,8 +264,11 @@ The AI narration is explicitly advisory. The narrate phase instructs the
 model to explain each break and suggest a follow-up, but the resolution
 decision is the controller's. The intent-confirm gate requires explicit
 confirmation before an adjusting entry is locked. The worked example on
-the web app shows both what the model was asked and what it returned, so
-the boundary between deterministic output and model output is visible.
+the web app needs no key, so its explanations come from the template.
+What the model was asked and what it returned appear only after a live
+run with your own key: each AI explanation is labelled as one, with the
+prompt beside it, so the boundary between deterministic output and model
+output is visible.
 
 The tool is an aid to the reconciliation, not a replacement for it.
 
@@ -303,16 +307,13 @@ enter your own Anthropic API key in the sidebar.
 ### API key
 
 The matching and reconciliation need no key. Only the AI explanations
-require one.
+require one, and only in the web app: paste your key into the sidebar,
+then press Draft explanations on the Reconciliation page. The key is used
+only for your session and is not stored.
 
-Add your key to a `.env` file:
-
-```
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-```
-
-Or, on the web app, paste it into the sidebar. The key is used only for
-your session and is not stored.
+The CLI never calls the model. It drafts every explanation from the
+template and labels each one "Explanation (template)", so it needs no key
+and no `.env` file.
 
 ---
 
@@ -351,7 +352,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               141 tests across 28 test classes
+  test_pipeline.py               176 tests
 
 output/                          Generated files (gitignored)
 ```
@@ -371,7 +372,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-141 tests across 28 test classes, no real API calls:
+176 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -381,15 +382,18 @@ pytest tests/test_pipeline.py -v
 The test classes cover loading, matching, classification, narration,
 resolution, lock persistence, stale-lock detection, PDF generation,
 audit records, amount coercion (currency, parentheses, trailing minus,
-comma-decimal, spaces), date coercion (11 formats), blank rows,
-missing/extra columns, encoding fallback, and mixed dirty/clean files.
+comma-decimal, spaces), date coercion (8 of the 11 accepted formats),
+blank rows, missing/extra columns, encoding fallback, and mixed
+dirty/clean files.
 
 ---
 
 ## Tech stack
 
-Python 3.11 . pandas . Anthropic Claude API . Streamlit . reportlab .
+Python . pandas . Anthropic Claude API . Streamlit . reportlab .
 python-dotenv . pytest
+
+Tested on Python 3.13 and 3.14.
 
 ---
 

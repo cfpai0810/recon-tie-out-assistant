@@ -129,10 +129,11 @@ def _home_page():
             "sidebar here to enable AI explanations.")
         st.write(
             "What it costs. Each run makes one short call to Claude Sonnet "
-            "to narrate the breaks. At Sonnet's current rate of about three "
-            "US dollars per million input tokens and fifteen per million "
-            "output tokens, a single reconciliation is well under one US "
-            "cent in practice.")
+            "per break, eight calls on the sample data. At Sonnet's current "
+            "rate of about three US dollars per million input tokens and "
+            "fifteen per million output tokens, a run on the sample data "
+            "costs about 2 US cents. That is an estimate: the app does not "
+            "record token counts.")
         st.caption(
             "Your key is used only for your session and is not stored by "
             "this site. On the web the data stays sample-only; to work on "

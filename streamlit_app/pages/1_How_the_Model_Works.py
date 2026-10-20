@@ -70,7 +70,8 @@ st.write(
     "For every break it reads the transaction details Python has already "
     "matched and classified, and writes a plain-language explanation of "
     "what likely happened and what the reviewer should do. This step "
-    "makes one call to Claude and uses your Anthropic API key.")
+    "makes one call to Claude per break, eight on the sample data, and "
+    "uses your Anthropic API key.")
 
 st.info(
     "The AI never decides what is a break. It only interprets items "
@@ -146,7 +147,7 @@ st.markdown(
     "| Bank (A) | INV-100 | 10 Jun | -500.00 |\n"
     "| Book (B) | INV-100 | 10 Jun | -500.00 |")
 st.caption(
-    "Match: same reference, date, and amount. The cleanest pairing.")
+    "Match: same reference, direction, and amount. The cleanest pairing.")
 
 st.write("")
 st.markdown("**Rule 2: Within tolerance** :white_check_mark:")

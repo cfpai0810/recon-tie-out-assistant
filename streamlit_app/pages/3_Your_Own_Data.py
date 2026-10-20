@@ -104,7 +104,8 @@ st.write(
 st.markdown("**Dates**")
 st.write(
     "ISO (`2026-06-15`), day-first (`15/06/2026`), month-first "
-    "(`06/15/2026`), short month name (`15-Jun-2026`, `15 Jun 2026`), "
+    "(`06/15/2026`, tried only after day-first, so `06/05/2026` is read "
+    "as 6 May), short month name (`15-Jun-2026`, `15 Jun 2026`), "
     "full month name (`15 June 2026`), US with comma (`Jun 15, 2026`), "
     "and slash-month (`15/Jun/2026`). Rows with dates that cannot be "
     "parsed are skipped and listed.")
@@ -159,8 +160,9 @@ st.markdown("#### What the AI key costs")
 st.write(
     "The matching and reconciliation need no key. Only the AI "
     "explanations require one. Each run makes one short call to Claude "
-    "Sonnet per break. At current Sonnet rates, a single reconciliation "
-    "is well under one US cent in practice.")
+    "Sonnet per break, eight calls on the sample data. At current Sonnet "
+    "rates, a run on the sample data costs about 2 US cents. That is an "
+    "estimate: the app does not record token counts.")
 
 st.markdown("---")
 
@@ -185,9 +187,10 @@ st.markdown(
     "- **No multi-currency.** All amounts are treated as the same "
     "currency. If your data has mixed currencies, split them into "
     "separate files first.\n"
-    "- **Tolerance is 0.02.** The within-tolerance rule absorbs "
-    "differences up to 0.02. This is set in `config.py` and can be "
-    "changed, but the tool does not ask you at runtime.\n"
+    "- **Tolerance is 0.02 by default.** The within-tolerance rule absorbs "
+    "differences up to 0.02. The default is set in `config.py`, which the "
+    "CLI uses; on the web app's Reconciliation page you can change it with "
+    "the Absolute tolerance and Relative tolerance % inputs.\n"
     "- **AI is advisory.** The AI writes an explanation and suggests a "
     "follow-up, but it does not choose the resolution. If you run "
     "without an API key, you get templated explanations instead.")
