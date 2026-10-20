@@ -2409,3 +2409,63 @@ class TestSidebarOnArrival:
         source = (ROOT / "streamlit_app" / "Home.py").read_text(encoding="utf-8")
         assert 'initial_sidebar_state="auto"' in source
         assert '"expanded"' not in source
+
+
+# ── STEP 2: KEY GATE LAYOUT, WORKED EXAMPLE BUTTON, TABULAR FIGURES ─
+
+class TestFirstVisit:
+    """What a first-time visitor sees: a quiet key gate and one way in."""
+
+    def test_ux1_key_gate_sits_in_a_closed_expander(self, stand_in_anthropic):
+        from streamlit.testing.v1 import AppTest
+        from streamlit_app.lib.errors import KEY_LOOKS_COMPLETE
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        label = "Run it live with your own key (optional)"
+        sidebar = list(at.sidebar.children.values())
+        assert [(type(e).__name__, getattr(e, "label", None)) for e in sidebar[:1]] == [
+            ("Expander", label)]
+        assert sidebar[0].proto.expanded is False
+        assert [type(e).__name__ for e in sidebar[0].children.values()] == [
+            "Caption", "TextInput", "Caption", "Markdown"]
+        assert sidebar[1].value == "Live mode is off. The worked examples need no key."
+        assert len(sidebar) == 2
+        assert all("Run it yourself" not in m.value for m in at.sidebar.markdown)
+
+        at.sidebar.text_input(key="byo_api_key").input("not-a-key").run()
+        gate = at.sidebar.expander[0]
+        assert gate.label == label and len(gate.warning) == 1
+        gate.text_input(key="byo_api_key").input(_TEST_KEY).run()
+        gate = at.sidebar.expander[0]
+        assert gate.label == label
+        assert [s.value for s in gate.success] == [KEY_LOOKS_COMPLETE]
+        assert list(at.sidebar.children.values())[-1].value == "Live mode is on for this session."
+
+    def test_ux2_home_button_opens_the_worked_example_page_with_no_key(self):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        main = list(at.main.children.values())
+        assert '<div class="sc-header">' in main[1].value
+        assert main[2].label == "See the worked example"
+        at.button(key="btn_worked_example").click().run()
+        assert not at.exception
+        assert any("<h1>Reconciliation</h1>" in m.value for m in at.markdown)
+        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        assert any(m.value.startswith("##### Breaks: all five resolution types")
+                   for m in at.tabs[1].markdown)
+        assert at.session_state["live_client"] is None
+
+
+class TestTabularFigures:
+    def test_ux4_tabular_figures_only_on_numeric_elements(self):
+        import re
+        from streamlit_app.lib.theme import inject_css
+        rules = [(sel.split("*/")[-1].strip(), body)
+                 for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", inject_css())]
+        body_rule = next(body for sel, body in rules if sel.startswith("html, body"))
+        assert "tnum" not in body_rule and '"cv05" 1' in body_rule
+        numeric = [sel for sel, body in rules if "tnum" in body]
+        assert len(numeric) == 1
+        selectors = [s.strip() for s in numeric[0].split(",")]
+        assert selectors[:2] == ["table", "table *"]
+        assert '[data-testid="stMetricValue"]' in selectors
+        assert ".sc-metric .value" in selectors

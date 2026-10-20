@@ -51,10 +51,17 @@ def inject_css():
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 
-      /* Body, UI, and data: Inter, with tabular figures so numbers align */
+      /* Body, UI, and data: Inter */
       html, body, [class*="css"], .stMarkdown, .stText, p, span, div, label,
       input, button, table, td, th {{
         font-family: {SANS};
+        font-feature-settings: "cv05" 1;
+      }}
+
+      /* Tabular figures only where numbers line up: tables, metrics, figures */
+      table, table *, [data-testid="stMetricValue"], [data-testid="stMetricValue"] *,
+      [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] *,
+      .sc-metric .value {{
         font-feature-settings: "tnum" 1, "cv05" 1;
       }}
 
@@ -137,7 +144,6 @@ def inject_css():
         font-weight: 700;
         color: {DARK_BLUE};
         font-family: {SANS};
-        font-feature-settings: "tnum" 1;
       }}
     </style>
     """

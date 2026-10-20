@@ -37,6 +37,10 @@ def _home_page():
         unsafe_allow_html=True,
     )
 
+    # -- The worked example, one click away and needing no key ----------------
+    if st.button("See the worked example", key="btn_worked_example"):
+        st.switch_page("pages/2_Reconciliation.py")
+
     # -- The key gate (sidebar): returns a per-session client or None ---------
     client = render_key_gate()
     st.session_state["live_client"] = client
