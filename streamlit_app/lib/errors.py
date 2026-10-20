@@ -6,11 +6,13 @@
 # the Claude calls (bad key, rate limit, network) and any unexpected error.
 # =============================================================================
 
-import anthropic
-
 from config import MODEL
+# The one mapping from exceptions to codes lives with the engine, which
+# records the same code when narrate() falls back to the template.
+from src.step5_narrate import failure_code
 
-# One plain line per failed model call, by the code narrate() records.
+# One plain line per kind of failed model call, the same across the series. The
+# short code goes into any audit record instead of an exception name.
 MODEL_FAILURE_MESSAGES = {
     "key_rejected": "Anthropic did not accept this key. Check that it was copied in "
                     "full and has not been deleted or expired.",
@@ -26,6 +28,7 @@ MODEL_FAILURE_MESSAGES = {
                            "temporary, so try again in a moment.",
     "unreadable_reply": "The model replied, but not in the form this app asked for.",
 }
+KEY_LOOKS_COMPLETE = "Key looks complete. It is checked when you first run the model."
 
 
 def model_failure_message(code):
@@ -35,29 +38,11 @@ def model_failure_message(code):
 
 
 def friendly_message(exc):
-    """Turn an exception into a plain-language message for the user.
-    Returns a short string. Never exposes a stack trace."""
-    if isinstance(exc, anthropic.AuthenticationError):
-        return ("That API key was not accepted. Check you pasted the whole "
-                "key (it starts with sk-ant-) and that it is active in your "
-                "Anthropic console, then try again.")
-
-    if isinstance(exc, anthropic.RateLimitError):
-        return ("Your account hit a rate limit. Wait a moment and try again. "
-                "If it keeps happening, check your usage limits in the "
-                "Anthropic console.")
-
-    if isinstance(exc, anthropic.APIStatusError):
-        return ("The AI service returned an error and could not complete the "
-                "request. This is usually temporary. Please try again in a "
-                "moment.")
-    if isinstance(exc, anthropic.APIConnectionError):
-        return ("Could not reach the AI service. Check your connection and "
-                "try again.")
-
+    """A plain sentence for any failure. Never a class name or a stack trace."""
+    code = failure_code(exc)
+    if code:
+        return model_failure_message(code)
     if exc.__class__.__name__ == "NoKeyError":
-        return ("Paste your Anthropic API key above to run a live analysis, "
-                "or view the example output which needs no key.")
-
-    return ("Something went wrong running that request. Please try again, or "
-            "try one of the example prompts.")
+        return ("Paste your Anthropic API key in the sidebar to run a live analysis, "
+                "or open the worked example, which needs no key.")
+    return "Something went wrong running that request. Please try again."

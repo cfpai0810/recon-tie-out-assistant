@@ -917,6 +917,12 @@ with tab_live:
             else:
                 if failure:
                     st.warning(model_failure_message(failure))
+                    # Clears only the drafts and the failure: the reconciliation
+                    # and the resolutions stay, so a retry needs no reload.
+                    if st.button("Try again", key="btn_draft_retry"):
+                        for k in (_DRAFTS_KEY, _PROMPTS_KEY, _FAILURE_KEY):
+                            st.session_state.pop(k, None)
+                        st.rerun()
                 st.caption(
                     "The template drafted {} of the {} explanations below; "
                     "each is labelled.".format(n_total - n_ai, n_total))

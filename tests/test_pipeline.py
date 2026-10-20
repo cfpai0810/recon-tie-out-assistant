@@ -2135,3 +2135,155 @@ class TestModelCall:
         out = capsys.readouterr().out
         assert "Explanation (template):" in out
         assert "AI explanation" not in out
+
+
+# ── STEP 2: KEY GATE, ONE ERROR MAPPING, RETRY ──────────────────────
+
+_TEST_KEY = "sk-ant-api03-" + "x" * 90
+_HOME = ROOT / "streamlit_app" / "Home.py"
+_RECON_PAGE = ROOT / "streamlit_app" / "pages" / "2_Reconciliation.py"
+
+# One stand-in SDK error per failure code, built without a network call.
+_MODEL_ERRORS = [
+    (lambda a: _status_error(a.AuthenticationError, 401), "key_rejected"),
+    (lambda a: _status_error(a.PermissionDeniedError, 403), "key_forbidden"),
+    (lambda a: _status_error(a.NotFoundError, 404), "model_not_found"),
+    (lambda a: _status_error(a.BadRequestError, 400), "bad_request"),
+    (lambda a: _status_error(a.RateLimitError, 429), "rate_limited"),
+    (lambda a: _status_error(a.InternalServerError, 500), "service_unavailable"),
+    (lambda a: a.APIConnectionError(request=__import__("httpx").Request("POST", "https://x")),
+     "service_unavailable"),
+]
+
+
+class _StandInAnthropic:
+    """Takes the place of anthropic.Anthropic while an AppTest runs the app,
+    so no call reaches the network. While `failing` is set every call is
+    refused with a 401; otherwise each call returns a well-formed draft."""
+
+    failing = False
+
+    def __init__(self, api_key=None, **kwargs):
+        self.messages = self
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        if type(self).failing:
+            import anthropic
+            raise _status_error(anthropic.AuthenticationError, 401)
+        return SimpleNamespace(content=[SimpleNamespace(
+            text='{"explanation": "Model text.", "follow_up": "Model step."}')])
+
+
+@pytest.fixture
+def stand_in_anthropic(monkeypatch):
+    import anthropic
+    monkeypatch.setattr(anthropic, "Anthropic", _StandInAnthropic)
+    monkeypatch.setattr(_StandInAnthropic, "failing", False)
+    return _StandInAnthropic
+
+
+class TestKeyGate:
+    """The gate says where the key is held, and the key outlives a page change."""
+
+    def test_item2_key_gate_privacy_wording(self, stand_in_anthropic):
+        from streamlit.testing.v1 import AppTest
+        from streamlit_app.lib.errors import KEY_LOOKS_COMPLETE
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        box = at.sidebar.text_input(key="byo_api_key")
+        assert box.help == ("Held in the server's memory for this session only. "
+                            "Never stored, never logged.")
+        notes = " ".join(m.value for m in at.sidebar.markdown)
+        assert ("Your key is held in the server's memory for your session only, used "
+                "to make the call, and never stored or logged. If you would rather your "
+                "key never leave your own machine, download the project from GitHub and "
+                "run it locally.") in notes
+        box.input(_TEST_KEY).run()
+        assert [s.value for s in at.sidebar.success] == [KEY_LOOKS_COMPLETE]
+        source = (ROOT / "streamlit_app" / "lib" / "key_gate.py").read_text(encoding="utf-8")
+        for stale in ("never stored server-side", "browser", "Key accepted"):
+            assert stale not in source
+
+    def test_item4_key_entered_on_home_stays_in_effect_on_other_pages(self, stand_in_anthropic):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        at.sidebar.text_input(key="byo_api_key").input(_TEST_KEY).run()
+        assert isinstance(at.session_state["live_client"], _StandInAnthropic)
+        # A page without the gate, then the page that runs the model.
+        at.switch_page("pages/1_How_the_Model_Works.py").run()
+        at.switch_page("pages/2_Reconciliation.py").run()
+        assert not at.exception
+        assert isinstance(at.session_state["live_client"], _StandInAnthropic)
+        assert at.sidebar.text_input(key="byo_api_key").value == _TEST_KEY
+        at.button(key="btn_reconcile").click().run()
+        assert at.button(key="btn_draft") is not None
+
+
+class TestOneErrorMapping:
+    """The Draft button's errors and narrate()'s recorded code use one mapping."""
+
+    @pytest.mark.parametrize("make, code", _MODEL_ERRORS)
+    def test_item17_draft_errors_give_the_same_plain_messages(self, make, code):
+        import anthropic
+        from src.step5_narrate import failure_code, narrate
+        from streamlit_app.lib import errors
+        exc = make(anthropic)
+        assert errors.failure_code is failure_code
+        assert failure_code(exc) == code
+        state = narrate(_classified_sample(), _FakeClient(error=exc))
+        assert state.narration_failure == code
+        assert errors.friendly_message(exc) == errors.model_failure_message(code)
+        # A wrapped SDK error still maps, through its cause.
+        try:
+            raise RuntimeError("drafting failed") from exc
+        except RuntimeError as wrapped:
+            assert errors.friendly_message(wrapped) == errors.model_failure_message(code)
+        engine = (ROOT / "src" / "step5_narrate.py").read_text(encoding="utf-8")
+        assert "import streamlit" not in engine and "from streamlit" not in engine
+
+    def test_item55_other_failures_get_plain_messages(self):
+        from streamlit_app.lib.claude_client import NoKeyError
+        from streamlit_app.lib.errors import friendly_message
+        generic = friendly_message(ValueError("boom"))
+        no_key = friendly_message(NoKeyError("No API key provided."))
+        assert generic == "Something went wrong running that request. Please try again."
+        assert "in the sidebar" in no_key and "worked example" in no_key
+        for message in (generic, no_key):
+            assert "example prompts" not in message
+            assert "above" not in message
+            assert "Error" not in message and "boom" not in message
+
+
+class TestRetryDrafts:
+    """P5a: after a failed drafting run, Try again works without a reload."""
+
+    def test_p5a_try_again_redrafts_and_keeps_the_resolutions(self, stand_in_anthropic):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        at.sidebar.text_input(key="byo_api_key").input(_TEST_KEY).run()
+        at.button(key="btn_reconcile").click().run()
+
+        # Lock one resolution first: confirm the many-to-one suggestion. (A card
+        # with a Resolution radio would leave that radio behind in AppTest's
+        # element tree after the page's st.rerun, and the next run fails on it.)
+        confirm = next(b for b in at.button if (b.key or "").startswith("m2o_confirm_"))
+        locked = confirm.key[len("m2o_confirm_"):]
+        confirm.click().run()
+        assert locked in at.session_state["p5_resolutions"]
+
+        stand_in_anthropic.failing = True
+        at.button(key="btn_draft").click().run()
+        assert at.session_state["p5_ai_failure"] == "key_rejected"
+        assert any(w.value.endswith("Code: `key_rejected`") for w in at.warning)
+
+        stand_in_anthropic.failing = False
+        at.button(key="btn_draft_retry").click().run()
+        assert "p5_ai_failure" not in at.session_state
+        at.button(key="btn_draft").click().run()
+
+        assert not at.exception
+        assert at.session_state["p5_ai_failure"] == ""
+        assert any(s.value.startswith("AI explanations drafted for all") for s in at.success)
+        assert not [b for b in at.button if b.key == "btn_draft_retry"]
+        assert at.session_state["reconciled"] is True
+        assert locked in at.session_state["p5_resolutions"]

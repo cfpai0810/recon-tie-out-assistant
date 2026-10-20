@@ -206,20 +206,29 @@ def _build_ai_prompt(brk: Break, side_a_label: str, side_b_label: str) -> str:
     return "\n".join(lines)
 
 
-def failure_code(exc: Exception) -> str:
-    """The category of a failed model call: shown to the reviewer as a plain
-    message and kept as a short code, never as an exception name."""
-    if isinstance(exc, anthropic.AuthenticationError):
-        return "key_rejected"
-    if isinstance(exc, anthropic.PermissionDeniedError):
-        return "key_forbidden"
-    if isinstance(exc, anthropic.NotFoundError):
-        return "model_not_found"
-    if isinstance(exc, anthropic.RateLimitError):
-        return "rate_limited"
-    if isinstance(exc, anthropic.APIStatusError) and exc.status_code < 500:
-        return "bad_request"
-    return "service_unavailable"
+def failure_code(exc):
+    """The kind of failed model call, or None when exc is not one. Follows the
+    exception's causes, so an engine that wraps the SDK's error still maps.
+
+    The one mapping from exceptions to codes: the web app's error messages
+    (streamlit_app/lib/errors.py) import it from here."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, anthropic.AuthenticationError):
+            return "key_rejected"
+        if isinstance(exc, anthropic.PermissionDeniedError):
+            return "key_forbidden"
+        if isinstance(exc, anthropic.NotFoundError):
+            return "model_not_found"
+        if isinstance(exc, anthropic.RateLimitError):
+            return "rate_limited"
+        if isinstance(exc, anthropic.APIStatusError):
+            return "bad_request" if exc.status_code < 500 else "service_unavailable"
+        if isinstance(exc, anthropic.APIConnectionError):
+            return "service_unavailable"
+        exc = exc.__cause__ or exc.__context__
+    return None
 
 
 def _call_ai(client, prompt: str) -> Draft:
@@ -267,7 +276,8 @@ def narrate(state: ReconciliationState, client=None) -> ReconciliationState:
             try:
                 draft = _call_ai(client, prompt)
             except anthropic.APIError as exc:
-                state.narration_failure = state.narration_failure or failure_code(exc)
+                state.narration_failure = (state.narration_failure or failure_code(exc)
+                                           or "service_unavailable")
             except (ValueError, KeyError, IndexError, AttributeError, TypeError):
                 # The reply arrived but was not the JSON asked for.
                 state.narration_failure = state.narration_failure or "unreadable_reply"
