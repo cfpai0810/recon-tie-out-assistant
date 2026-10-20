@@ -352,7 +352,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               176 tests
+  test_pipeline.py               177 tests
 
 output/                          Generated files (gitignored)
 ```
@@ -372,7 +372,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-176 tests, no real API calls:
+177 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

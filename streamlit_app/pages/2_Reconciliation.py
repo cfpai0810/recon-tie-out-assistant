@@ -365,13 +365,26 @@ def _render_position_panel(state):
         if b.stable_break_key in state.resolutions)
     n_total = len(state.breaks)
 
+    # Investigate is a decision but not a resolution: those items stay open,
+    # as the PDF and the sign-off line count them (_open_item_count).
+    n_investigating = sum(
+        1 for b in state.breaks
+        if (state.resolutions.get(b.stable_break_key) is not None
+            and state.resolutions[b.stable_break_key].resolution_type
+            == ResolutionType.INVESTIGATE))
+
     if n_total == 0:
         st.success("No breaks. The two sides match.")
+    elif n_resolved == n_total and n_investigating:
+        st.info("All breaks have a decision, but {} item{} {} still under "
+                "investigation.".format(
+                    n_investigating, "s" if n_investigating != 1 else "",
+                    "are" if n_investigating != 1 else "is"))
     elif n_resolved == n_total and left_after_adjust:
         st.info("All breaks resolved, but {:,.2f} is still unexplained: an "
                 "adjustment removes only the amount it books.".format(
                     left_after_adjust))
-    elif n_resolved == n_total:
+    elif n_resolved == n_total and _open_item_count(state) == 0:
         st.success("All breaks resolved. The difference is fully explained.")
     else:
         still = n_total - n_resolved

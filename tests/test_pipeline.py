@@ -2544,3 +2544,13 @@ class TestSignOffCount:
         assert [i.value for i in at.info if "still open" in i.value] == [
             "3 breaks still open. You can still sign off; the report will "
             "note them as unresolved."]
+
+    def test_fix_example_not_fully_explained_while_investigating(self):
+        # The worked example leaves CHG-Q2 under investigation: the position
+        # panel must say so, never "fully explained" (Step 3b).
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        assert not at.exception
+        assert not [s.value for s in at.success if "fully explained" in s.value]
+        assert [i.value for i in at.info if "under investigation" in i.value] == [
+            "All breaks have a decision, but 1 item is still under investigation."]
