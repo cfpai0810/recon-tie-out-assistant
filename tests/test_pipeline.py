@@ -2022,3 +2022,116 @@ class TestDeploymentPins:
         if version("streamlit").startswith("1.60."):
             major, minor = (int(part) for part in version("starlette").split(".")[:2])
             assert (major, minor) < (1, 8)
+
+
+# ── THE MODEL CALL ───────────────────────────────────────────────────
+
+class _FakeClient:
+    """Stands in for the Anthropic client: records each request, and either
+    replies with the given text or raises the given error. No network."""
+
+    def __init__(self, reply=None, error=None):
+        self.calls = []
+        self.messages = self
+        self._reply, self._error = reply, error
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        return SimpleNamespace(content=[SimpleNamespace(text=self._reply)])
+
+
+def _status_error(cls, status):
+    import httpx
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return cls("refused", response=httpx.Response(status, request=request), body=None)
+
+
+def _classified_sample():
+    from config import BANK_STATEMENT_FILE, CASH_BOOK_FILE, TOLERANCE_ABS
+    from src.step1_load import load
+    from src.step2_validate import validate
+    from src.step3_match import match
+    from src.step4_classify import classify
+    state = load(str(BANK_STATEMENT_FILE), str(CASH_BOOK_FILE))
+    return classify(match(validate(state), tolerance=TOLERANCE_ABS))
+
+
+class TestModelCall:
+    """The model comes from config, and a failed call is recorded, never hidden."""
+
+    def test_item20_model_comes_from_config(self):
+        import config
+        from src.step5_narrate import narrate
+        client = _FakeClient(reply='{"explanation": "E.", "follow_up": "F."}')
+        narrate(_classified_sample(), client)
+        assert config.MODEL == "claude-sonnet-4-6"
+        assert client.calls and {c["model"] for c in client.calls} == {config.MODEL}
+        for path in list((ROOT / "src").glob("*.py")) + list((ROOT / "streamlit_app").rglob("*.py")):
+            assert "claude-sonnet-4-2025" not in path.read_text(encoding="utf-8"), path
+
+    def test_item20_model_drafts_are_labelled_model(self):
+        from src.step5_narrate import narrate
+        client = _FakeClient(reply='{"explanation": "E.", "follow_up": "F."}')
+        state = narrate(_classified_sample(), client)
+        assert state.drafts and {d.source for d in state.drafts.values()} == {"model"}
+        assert state.narration_failure == ""
+
+    def test_item20_rejected_key_is_recorded_and_template_labelled(self):
+        import anthropic
+        from src.step5_narrate import narrate
+        client = _FakeClient(error=_status_error(anthropic.AuthenticationError, 401))
+        state = narrate(_classified_sample(), client)
+        assert state.narration_failure == "key_rejected"
+        assert state.drafts and {d.source for d in state.drafts.values()} == {"template"}
+
+    def test_item20_unreadable_reply_is_recorded(self):
+        from src.step5_narrate import narrate
+        state = narrate(_classified_sample(), _FakeClient(reply="Not the JSON asked for."))
+        assert state.narration_failure == "unreadable_reply"
+        assert {d.source for d in state.drafts.values()} == {"template"}
+
+    @pytest.mark.parametrize("make, code", [
+        (lambda a: _status_error(a.AuthenticationError, 401), "key_rejected"),
+        (lambda a: _status_error(a.PermissionDeniedError, 403), "key_forbidden"),
+        (lambda a: _status_error(a.NotFoundError, 404), "model_not_found"),
+        (lambda a: _status_error(a.BadRequestError, 400), "bad_request"),
+        (lambda a: _status_error(a.RateLimitError, 429), "rate_limited"),
+        (lambda a: _status_error(a.InternalServerError, 500), "service_unavailable"),
+        (lambda a: a.APIConnectionError(request=__import__("httpx").Request("POST", "https://x")),
+         "service_unavailable"),
+    ])
+    def test_item20_each_failure_has_one_plain_message(self, make, code):
+        import anthropic
+        import config
+        from src.step5_narrate import failure_code
+        from streamlit_app.lib.errors import model_failure_message
+        assert failure_code(make(anthropic)) == code
+        message = model_failure_message(code)
+        assert message.endswith("Code: `{}`".format(code))
+        assert "Error" not in message and "Traceback" not in message
+        if code in ("bad_request", "model_not_found"):
+            assert "usually temporary" not in message
+        if code == "model_not_found":
+            assert config.MODEL in message
+
+    def test_item12_cli_labels_template_text(self, monkeypatch, capsys):
+        import main
+        from src.step5_narrate import narrate
+
+        class _Stop(Exception):
+            pass
+
+        def _no_input(prompt=""):
+            raise _Stop
+
+        state = narrate(_classified_sample())
+        brk = state.breaks[0]
+        monkeypatch.setattr("builtins.input", _no_input)
+        with pytest.raises(_Stop):
+            main._cli_ask(brk, state.drafts)
+        out = capsys.readouterr().out
+        assert "Explanation (template):" in out
+        assert "AI explanation" not in out

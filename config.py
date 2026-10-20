@@ -9,6 +9,7 @@
 #   - MAX_MANY_TO_ONE_ITEMS:        many-to-one combination cap
 #   - MANY_TO_ONE_DATE_WINDOW_DAYS: many-to-one date window
 #   - ENTITY_NAME:                  reporting entity label
+#   - MODEL:                        the model that drafts the explanations
 #
 # Core rule: every tunable threshold lives here, not in the step that
 # uses it. Changing a bound never requires editing a step file.
@@ -35,3 +36,6 @@ MAX_MANY_TO_ONE_ITEMS = 4
 MANY_TO_ONE_DATE_WINDOW_DAYS = 14
 
 ENTITY_NAME = "Valencia Operations"
+
+# The model that drafts break explanations, the same as Projects 1 to 4.
+MODEL = "claude-sonnet-4-6"

@@ -24,7 +24,7 @@ from streamlit_app.lib.theme import (
     DARK_BLUE, MUTED, RULE,
 )
 from streamlit_app.lib.key_gate import render_key_gate
-from streamlit_app.lib.errors import friendly_message
+from streamlit_app.lib.errors import friendly_message, model_failure_message
 from streamlit_app.lib.audit import record_run
 from config import (
     BANK_STATEMENT_FILE, CASH_BOOK_FILE, ENTITY_NAME, TOLERANCE_ABS,
@@ -377,6 +377,7 @@ _RES_KEY = "p5_resolutions"
 _PENDING_KEY = "p5_pending_adjust"
 _DRAFTS_KEY = "p5_ai_drafts"
 _PROMPTS_KEY = "p5_ai_prompts"
+_FAILURE_KEY = "p5_ai_failure"
 _SIGNED_OFF_KEY = "p5_signed_off"
 _REJECTED_M2O_KEY = "p5_rejected_m2o"
 
@@ -450,10 +451,7 @@ def _get_draft(brk, state):
     ai_drafts = st.session_state.get(_DRAFTS_KEY, {})
     if brk.stable_break_key in ai_drafts:
         draft = ai_drafts[brk.stable_break_key]
-        templated = _templated_draft(
-            brk, state.side_a_label, state.side_b_label)
-        is_ai = (draft.explanation != templated.explanation)
-        return draft, is_ai
+        return draft, draft.source == "model"
     return _templated_draft(brk, state.side_a_label, state.side_b_label), False
 
 
@@ -464,6 +462,7 @@ def _draft_explanations(state, client, tolerance_abs=None, tolerance_rel=None):
         tolerance_abs=tolerance_abs, tolerance_rel=tolerance_rel)
     narrate_state = narrate(narrate_state, client)
     st.session_state[_DRAFTS_KEY] = dict(narrate_state.drafts)
+    st.session_state[_FAILURE_KEY] = narrate_state.narration_failure
     prompts = {}
     for brk in narrate_state.breaks:
         prompts[brk.stable_break_key] = _build_ai_prompt(
@@ -910,18 +909,17 @@ with tab_live:
                 1 for brk in recon_state.breaks
                 if _get_draft(brk, recon_state)[1])
             n_total = len(recon_state.breaks)
+            failure = st.session_state.get(_FAILURE_KEY, "")
             if n_ai == n_total:
                 st.success(
                     "AI explanations drafted for all {} breaks.".format(
                         n_total))
-            elif n_ai > 0:
-                st.success(
-                    "{} of {} breaks received AI explanations; the rest "
-                    "use templated fallbacks.".format(n_ai, n_total))
             else:
-                st.info(
-                    "Explanations drafted (templated fallback; the AI "
-                    "call did not succeed for any break).")
+                if failure:
+                    st.warning(model_failure_message(failure))
+                st.caption(
+                    "The template drafted {} of the {} explanations below; "
+                    "each is labelled.".format(n_total - n_ai, n_total))
         elif client:
             if st.button("Draft explanations", key="btn_draft"):
                 with st.spinner(

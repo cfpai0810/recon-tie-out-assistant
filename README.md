@@ -374,6 +374,7 @@ changed) are flagged for re-review rather than silently reapplied.
 141 tests across 28 test classes, no real API calls:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests/test_pipeline.py -v
 ```
 

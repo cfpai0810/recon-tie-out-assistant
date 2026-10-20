@@ -20,6 +20,10 @@ from __future__ import annotations
 
 import json
 
+import anthropic
+
+from config import MODEL
+
 from src.state import Break, BreakType, Draft, ReconciliationState
 
 
@@ -202,23 +206,39 @@ def _build_ai_prompt(brk: Break, side_a_label: str, side_b_label: str) -> str:
     return "\n".join(lines)
 
 
-def _call_ai(client, prompt: str) -> Draft | None:
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=400,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        data = json.loads(text)
-        return Draft(
-            explanation=data.get("explanation", ""),
-            follow_up=data.get("follow_up", ""),
-        )
-    except Exception:
-        return None
+def failure_code(exc: Exception) -> str:
+    """The category of a failed model call: shown to the reviewer as a plain
+    message and kept as a short code, never as an exception name."""
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "key_rejected"
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return "key_forbidden"
+    if isinstance(exc, anthropic.NotFoundError):
+        return "model_not_found"
+    if isinstance(exc, anthropic.RateLimitError):
+        return "rate_limited"
+    if isinstance(exc, anthropic.APIStatusError) and exc.status_code < 500:
+        return "bad_request"
+    return "service_unavailable"
+
+
+def _call_ai(client, prompt: str) -> Draft:
+    """One model call for one break. A failure is raised, not hidden: the
+    caller records why and falls back to the template."""
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = response.content[0].text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    data = json.loads(text)
+    return Draft(
+        explanation=data.get("explanation", ""),
+        follow_up=data.get("follow_up", ""),
+        source="model",
+    )
 
 
 def narrate(state: ReconciliationState, client=None) -> ReconciliationState:
@@ -244,7 +264,13 @@ def narrate(state: ReconciliationState, client=None) -> ReconciliationState:
         draft = None
         if client is not None:
             prompt = _build_ai_prompt(brk, state.side_a_label, state.side_b_label)
-            draft = _call_ai(client, prompt)
+            try:
+                draft = _call_ai(client, prompt)
+            except anthropic.APIError as exc:
+                state.narration_failure = state.narration_failure or failure_code(exc)
+            except (ValueError, KeyError, IndexError, AttributeError, TypeError):
+                # The reply arrived but was not the JSON asked for.
+                state.narration_failure = state.narration_failure or "unreadable_reply"
 
         if draft is None:
             draft = _templated_draft(brk, state.side_a_label, state.side_b_label)

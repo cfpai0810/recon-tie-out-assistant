@@ -44,7 +44,8 @@ def _cli_ask(brk, drafts):
 
     draft = drafts.get(brk.stable_break_key)
     if draft:
-        print(f"\n  AI explanation: {draft.explanation}")
+        label = "AI explanation" if draft.source == "model" else "Explanation (template)"
+        print(f"\n  {label}: {draft.explanation}")
         print(f"  Suggested follow-up: {draft.follow_up}")
 
     if brk.break_type == BreakType.MANY_TO_ONE_SUGGESTION:

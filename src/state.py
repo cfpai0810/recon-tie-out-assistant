@@ -105,6 +105,7 @@ class Break:
 class Draft:
     explanation: str
     follow_up: str
+    source: str = "template"        # "template" or "model": who wrote the text
 
 
 @dataclass
@@ -135,6 +136,7 @@ class ReconciliationState:
     matches: list[Match] = field(default_factory=list)
     breaks: list[Break] = field(default_factory=list)
     drafts: dict[str, Draft] = field(default_factory=dict)
+    narration_failure: str = ""     # code of the first failed model call, "" if none
     resolutions: dict[str, Resolution] = field(default_factory=dict)
     raw_difference: Decimal = Decimal("0")
     side_a_total: Decimal = Decimal("0")

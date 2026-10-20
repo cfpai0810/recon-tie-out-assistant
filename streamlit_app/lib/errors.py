@@ -8,6 +8,31 @@
 
 import anthropic
 
+from config import MODEL
+
+# One plain line per failed model call, by the code narrate() records.
+MODEL_FAILURE_MESSAGES = {
+    "key_rejected": "Anthropic did not accept this key. Check that it was copied in "
+                    "full and has not been deleted or expired.",
+    "key_forbidden": "This key is not allowed to use the model. Check the key's "
+                     "permissions in your Anthropic account.",
+    "model_not_found": "The model {model} could not be found. It may have been retired. "
+                       "Please report this on the project's GitHub page.",
+    "bad_request": "Anthropic rejected the request. This is a fault in this app, not in "
+                   "your key. Please report it.",
+    "rate_limited": "Anthropic is limiting requests on this key. Wait a minute and try "
+                    "again, or check your plan limits.",
+    "service_unavailable": "Anthropic could not be reached or is busy. This is usually "
+                           "temporary, so try again in a moment.",
+    "unreadable_reply": "The model replied, but not in the form this app asked for.",
+}
+
+
+def model_failure_message(code):
+    """The plain line for a failed model call, ending with its code."""
+    text = MODEL_FAILURE_MESSAGES.get(code, MODEL_FAILURE_MESSAGES["service_unavailable"])
+    return "{} Code: `{}`".format(text.format(model=MODEL), code)
+
 
 def friendly_message(exc):
     """Turn an exception into a plain-language message for the user.
