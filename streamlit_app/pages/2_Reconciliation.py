@@ -36,6 +36,7 @@ from src.step3_match import match
 from src.step4_classify import classify
 from src.step6_resolve import (
     _resolution_from_choice, compute_resolved_position, _figures_hash,
+    adjusted_part, adjustment_refusal,
 )
 from src.step5_narrate import narrate, _build_ai_prompt, _templated_draft
 from src.step7_record import build_pdf_bytes
@@ -288,6 +289,7 @@ def _render_position_panel(state):
 
     timing = adjust = dismiss = investigate = unresolved = Decimal("0")
     confirmed_m2o = Decimal("0")
+    left_after_adjust = Decimal("0")
     for brk in state.breaks:
         diff = _dec(brk.difference)
         res = state.resolutions.get(brk.stable_break_key)
@@ -296,7 +298,11 @@ def _render_position_panel(state):
         elif res.resolution_type == ResolutionType.ACCEPT_AS_TIMING:
             timing += diff
         elif res.resolution_type == ResolutionType.ADJUST:
-            adjust += diff
+            # An adjustment removes only the amount booked; the rest is open.
+            part = adjusted_part(brk, res)
+            adjust += part
+            unresolved += diff - part
+            left_after_adjust += abs(diff - part)
         elif res.resolution_type == ResolutionType.DISMISS:
             dismiss += diff
         elif res.resolution_type == ResolutionType.CONFIRM_MATCH:
@@ -361,6 +367,10 @@ def _render_position_panel(state):
 
     if n_total == 0:
         st.success("No breaks. The two sides match.")
+    elif n_resolved == n_total and left_after_adjust:
+        st.info("All breaks resolved, but {:,.2f} is still unexplained: an "
+                "adjustment removes only the amount it books.".format(
+                    left_after_adjust))
     elif n_resolved == n_total:
         st.success("All breaks resolved. The difference is fully explained.")
     else:
@@ -588,6 +598,10 @@ def _controls_adjust(brk, key):
         placeholder="What the adjusting entry is for",
     ) or "Adjusting entry"
     if st.button("Apply adjustment", key="apply_a_{}".format(key)):
+        refusal = adjustment_refusal(amount, brk)
+        if refusal:
+            st.error(refusal)
+            return
         res = _resolution_from_choice("A", desc, amount, brk)
         if res:
             st.session_state[_PENDING_KEY] = key

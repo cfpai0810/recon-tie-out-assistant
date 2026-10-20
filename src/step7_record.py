@@ -37,6 +37,7 @@ from reportlab.platypus import (
 from src.state import (
     BreakType, MatchType, ReconciliationState, ResolutionType,
 )
+from src.step6_resolve import adjusted_part
 
 # ── Shared theme palette ────────────────────────────────────────────
 
@@ -175,6 +176,7 @@ def build_pdf_bytes(state: ReconciliationState, *,
 
     timing = adjust = dismiss = investigate = unresolved = Decimal("0")
     confirmed_m2o = Decimal("0")
+    part_adjusted = 0       # adjusted breaks with part of the difference left
     for brk in state.breaks:
         diff = _dec(brk.difference)
         res = state.resolutions.get(brk.stable_break_key)
@@ -183,7 +185,12 @@ def build_pdf_bytes(state: ReconciliationState, *,
         elif res.resolution_type == ResolutionType.ACCEPT_AS_TIMING:
             timing += diff
         elif res.resolution_type == ResolutionType.ADJUST:
-            adjust += diff
+            # An adjustment removes only the amount booked; the rest is open.
+            part = adjusted_part(brk, res)
+            adjust += part
+            unresolved += diff - part
+            if part != diff:
+                part_adjusted += 1
         elif res.resolution_type == ResolutionType.DISMISS:
             dismiss += diff
         elif res.resolution_type == ResolutionType.CONFIRM_MATCH:
@@ -203,7 +210,7 @@ def build_pdf_bytes(state: ReconciliationState, *,
         if state.resolutions.get(b.stable_break_key) is None
         or state.resolutions[b.stable_break_key].resolution_type
            == ResolutionType.INVESTIGATE
-    )
+    ) + part_adjusted
 
     # ── Status ───────────────────────────────────────────────────────
     if signed_off_at and open_count == 0:
@@ -477,13 +484,25 @@ def build_pdf_bytes(state: ReconciliationState, *,
         sign_items.append(Paragraph(
             "Working copy, not yet signed off.", s_muted))
 
+    # The review sentence states the real state, never more than happened.
+    items = f"{open_count} open item" + ("s" if open_count != 1 else "")
+    if signed_off_at and open_count == 0:
+        review = (": a human reviewer resolved every break and signed off "
+                  "the result.")
+    elif signed_off_at:
+        review = f": a human reviewer signed off the result with {items}."
+    elif open_count:
+        review = (f". This is a working copy, {items}, not yet signed off "
+                  "by a reviewer.")
+    else:
+        review = ". This is a working copy, not yet signed off by a reviewer."
+
     sign_items.append(Spacer(1, 14))
     sign_items.append(Paragraph(
         "This reconciliation was prepared using the Reconciliation and "
         "Tie-Out Assistant. All matching, classification, and arithmetic "
         "is computed deterministically in tested Python code. "
-        "AI commentary (where present) is advisory only: a human reviewer "
-        "resolved every break and signed off the result.",
+        "AI commentary (where present) is advisory only" + review,
         S_SMALL,
     ))
     sign_items.append(Spacer(1, 6))

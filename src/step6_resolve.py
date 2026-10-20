@@ -7,6 +7,8 @@
 #   - load_locks():                 load locked resolutions from the JSON store
 #   - save_locks():                 persist locked resolutions for re-runs
 #   - compute_resolved_position():  compute the reconciled bottom line
+#   - adjustment_refusal():         refuse an adjustment larger than its break
+#   - adjusted_part():              the part of a break an adjustment removes
 #
 # Core rule: every resolution is a human decision. The adjustment does
 # not reach the position until the reviewer confirms it.
@@ -34,6 +36,36 @@ def _figures_hash(brk: Break) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def _dec(v) -> Decimal:
+    return v if isinstance(v, Decimal) else Decimal(str(v))
+
+
+def adjustment_refusal(adjustment_amount, brk: Break) -> str | None:
+    """A plain reason to refuse an adjustment, or None when it can be booked.
+
+    Finance context: an adjusting entry explains only the amount it books,
+    so it can never be larger than the break it explains.
+    """
+    if adjustment_amount is None:
+        return None
+    amount, size = abs(_dec(adjustment_amount)), abs(_dec(brk.difference))
+    if amount > size:
+        return (f"An adjustment of {amount:,.2f} is larger than this break of "
+                f"{size:,.2f}. Enter an amount no larger than the break.")
+    return None
+
+
+def adjusted_part(brk: Break, res: Resolution) -> Decimal:
+    """The part of a break's difference that an adjustment removes: the
+    amount booked, in the direction of the break, never more than the
+    break. Whatever is left stays unexplained."""
+    if res.adjustment_amount is None:
+        return Decimal("0")
+    diff = _dec(brk.difference)
+    part = min(abs(_dec(res.adjustment_amount)), abs(diff))
+    return part if diff >= 0 else -part
+
+
 def _resolution_from_choice(choice: str, text: str,
                             adjustment_amount: float | None,
                             brk: Break) -> Resolution | None:
@@ -48,7 +80,7 @@ def _resolution_from_choice(choice: str, text: str,
             figures_hash=fh,
         )
     elif choice == "A":
-        if adjustment_amount is None:
+        if adjustment_amount is None or adjustment_refusal(adjustment_amount, brk):
             return None
         adj = (adjustment_amount if isinstance(adjustment_amount, Decimal)
                else Decimal(str(adjustment_amount)))
@@ -153,14 +185,11 @@ def compute_resolved_position(state: ReconciliationState) -> Decimal:
     Finance context: the resolved position is the reconciliation's
     bottom line. It starts at the raw difference and is adjusted by each
     resolution: timing differences stand (they are disclosed but not
-    removed), adjustments and dismissals reduce the difference, and
-    items under investigation stay open. A fully reconciled position of
-    zero (or equal to timing plus tolerance) means every penny is
-    accounted for.
+    removed), adjustments reduce it by the amount booked, dismissals
+    reduce it by the whole break, and items under investigation stay
+    open. A fully reconciled position of zero (or equal to timing plus
+    tolerance) means every penny is accounted for.
     """
-    def _dec(v):
-        return v if isinstance(v, Decimal) else Decimal(str(v))
-
     position = _dec(state.raw_difference)
 
     for brk in state.breaks:
@@ -173,8 +202,7 @@ def compute_resolved_position(state: ReconciliationState) -> Decimal:
         if res.resolution_type == ResolutionType.ACCEPT_AS_TIMING:
             pass
         elif res.resolution_type == ResolutionType.ADJUST:
-            if res.adjustment_amount is not None:
-                position -= diff
+            position -= adjusted_part(brk, res)
         elif res.resolution_type == ResolutionType.DISMISS:
             position -= diff
         elif res.resolution_type == ResolutionType.CONFIRM_MATCH:
@@ -254,6 +282,9 @@ def resolve(state: ReconciliationState, *, ask: Callable, confirm: Callable,
         choice, text, adj_amount = ask(brk, state.drafts)
         res = _resolution_from_choice(choice, text, adj_amount, brk)
         if res is None:
+            refusal = adjustment_refusal(adj_amount, brk) if choice == "A" else None
+            if refusal:
+                print(f"  [!]  {refusal} The break stays open.")
             continue
 
         if res.resolution_type == ResolutionType.ADJUST and res.adjustment_amount is not None:

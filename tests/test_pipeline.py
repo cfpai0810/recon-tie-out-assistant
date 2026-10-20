@@ -2287,3 +2287,125 @@ class TestRetryDrafts:
         assert not [b for b in at.button if b.key == "btn_draft_retry"]
         assert at.session_state["reconciled"] is True
         assert locked in at.session_state["p5_resolutions"]
+
+
+# ── STEP 2: PART ADJUSTMENTS, THE PDF'S REVIEW SENTENCE, SIDEBAR ────
+
+def _pdf_text(pdf):
+    """The text of a ReportLab PDF, read with the standard library only."""
+    import base64
+    import re
+    import zlib
+    out = []
+    for raw in re.findall(rb"stream\r?\n(.*?)endstream", pdf, re.S):
+        data = zlib.decompress(base64.a85decode(raw.strip().removesuffix(b"~>")))
+        for s in re.findall(rb"\(((?:[^()\\]|\\.)*)\)\s*Tj", data):
+            out.append(re.sub(rb"\\(.)", rb"\1", s).decode("latin-1"))
+    return " ".join(" ".join(out).split())
+
+
+def _inv_2214(state):
+    return next(b for b in state.breaks
+                if b.break_type == BreakType.AMOUNT_MISMATCH
+                and b.side_a_records[0].reference == "INV-2214")
+
+
+def _sample_resolved(inv_2214_adjustment):
+    """The sample with every break resolved and nothing under investigation;
+    the 72.00 INV-2214 mismatch is adjusted by the amount given."""
+    from src.step6_resolve import _resolution_from_choice, compute_resolved_position
+    state = _classified_sample()
+    for brk in state.breaks:
+        refs = {r.reference for r in brk.side_a_records + brk.side_b_records}
+        if brk.break_type == BreakType.AMOUNT_MISMATCH:
+            res = _resolution_from_choice("A", "Correct invoice", inv_2214_adjustment, brk)
+        elif brk.break_type == BreakType.MANY_TO_ONE_SUGGESTION:
+            res = _resolution_from_choice("C", "Batch confirmed", None, brk)
+        elif brk.break_type == BreakType.REFERENCE_MISMATCH:
+            res = _resolution_from_choice("D", "Same transfer", None, brk)
+        elif "INT-JUN" in refs:
+            res = _resolution_from_choice("A", "Book interest", 12.15, brk)
+        elif "CHG-Q2" in refs:
+            res = _resolution_from_choice("A", "Book charge", -30.0, brk)
+        else:
+            res = _resolution_from_choice("T", "Timing", None, brk)
+        state.resolutions[brk.stable_break_key] = res
+    state.resolved_position = compute_resolved_position(state)
+    return state
+
+
+class TestPartAdjustment:
+    """An adjustment removes only the amount typed, never more than the break."""
+
+    def test_item24_one_pound_leaves_71_unexplained_and_72_clears_it(self):
+        from src.step6_resolve import adjusted_part
+        from src.step7_record import build_pdf_bytes
+        part, whole = _sample_resolved(1.00), _sample_resolved(72.00)
+        brk = _inv_2214(part)
+        assert brk.difference == Decimal("72.00")
+        assert adjusted_part(brk, part.resolutions[brk.stable_break_key]) == Decimal("1.00")
+        assert part.resolved_position == whole.resolved_position + Decimal("71.00")
+        part_text = _pdf_text(build_pdf_bytes(part))
+        assert "Remaining unexplained 71.00" in part_text
+        assert "Not yet resolved 71.00" in part_text
+        assert "Remaining unexplained 0.00" in _pdf_text(build_pdf_bytes(whole))
+
+    def test_item24_adjustment_larger_than_the_break_is_refused(self, capsys):
+        from src.step6_resolve import _resolution_from_choice, adjustment_refusal, resolve
+        state = _classified_sample()
+        brk = _inv_2214(state)
+        assert adjustment_refusal(72.01, brk) == (
+            "An adjustment of 72.01 is larger than this break of 72.00. "
+            "Enter an amount no larger than the break.")
+        assert adjustment_refusal(72.00, brk) is None
+        assert _resolution_from_choice("A", "Too much", 100.0, brk) is None
+        state = resolve(
+            state,
+            ask=lambda b, d: ("A", "Too much", 100.0) if b is brk else ("I", "Later", None),
+            confirm=lambda e: True,
+            output_dir=tempfile.mkdtemp(),
+        )
+        assert brk.stable_break_key not in state.resolutions
+        assert "is larger than this break of 72.00" in capsys.readouterr().out
+
+    def test_item24_page_refuses_an_adjustment_larger_than_the_break(self):
+        from streamlit.testing.v1 import AppTest
+        key = _inv_2214(_classified_sample()).stable_break_key
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        at.button(key="btn_reconcile").click().run()
+        at.radio(key="action_" + key).set_value("Adjust").run()
+        at.number_input(key="adj_amt_" + key).set_value(100.0).run()
+        at.button(key="apply_a_" + key).click().run()
+        assert not at.exception
+        assert [e.value for e in at.error] == [
+            "An adjustment of 100.00 is larger than this break of 72.00. "
+            "Enter an amount no larger than the break."]
+        assert key not in at.session_state["p5_resolutions"]
+        assert at.session_state["p5_pending_adjust"] is None
+
+
+class TestPdfReviewSentence:
+    """The PDF claims a full human review only when one happened."""
+
+    def test_item26_pdf_sentence_follows_the_real_state(self):
+        from src.step7_record import build_pdf_bytes
+        done, open_state = _sample_resolved(72.00), _classified_sample()
+        signed = _pdf_text(build_pdf_bytes(done, signed_off_at="30 June 2026 15:05 UTC"))
+        unsigned = _pdf_text(build_pdf_bytes(done))
+        unsigned_open = _pdf_text(build_pdf_bytes(open_state))
+        signed_open = _pdf_text(build_pdf_bytes(open_state, signed_off_at="1 July 2026"))
+        claim = "a human reviewer resolved every break and signed off the result."
+        assert "advisory only: " + claim in signed
+        assert "This is a working copy, not yet signed off by a reviewer." in unsigned
+        assert ("This is a working copy, 8 open items, not yet signed off by a "
+                "reviewer.") in unsigned_open
+        assert "a human reviewer signed off the result with 8 open items." in signed_open
+        for text in (unsigned, unsigned_open, signed_open):
+            assert claim not in text
+
+
+class TestSidebarOnArrival:
+    def test_item53_sidebar_starts_auto(self):
+        source = (ROOT / "streamlit_app" / "Home.py").read_text(encoding="utf-8")
+        assert 'initial_sidebar_state="auto"' in source
+        assert '"expanded"' not in source
