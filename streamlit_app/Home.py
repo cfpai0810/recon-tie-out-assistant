@@ -19,6 +19,10 @@ if str(ROOT) not in sys.path:
 from streamlit_app.lib.theme import inject_css
 from streamlit_app.lib.key_gate import render_key_gate
 
+# The worked example lives on the Reconciliation page, as its second tab. The
+# Home button sets this flag so that page opens on the example tab.
+OPEN_EXAMPLE_TAB = "p5_open_example"
+
 
 def _home_page():
     """Render the landing page content."""
@@ -39,6 +43,7 @@ def _home_page():
 
     # -- The worked example, one click away and needing no key ----------------
     if st.button("See the worked example", key="btn_worked_example"):
+        st.session_state[OPEN_EXAMPLE_TAB] = True
         st.switch_page("pages/2_Reconciliation.py")
 
     # -- The key gate (sidebar): returns a per-session client or None ---------

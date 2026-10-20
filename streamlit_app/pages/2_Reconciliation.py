@@ -843,8 +843,11 @@ st.caption(
     "resolve each break. The AI explanations are optional and need an "
     "API key.")
 
+# Home's "See the worked example" button opens this page on the example tab.
+_open_example = st.session_state.pop("p5_open_example", False)
 tab_live, tab_example = st.tabs(
-    ["Run it yourself", "View a worked example"])
+    ["Run it yourself", "View a worked example"],
+    default="View a worked example" if _open_example else None)
 
 
 with tab_live:

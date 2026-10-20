@@ -2469,3 +2469,45 @@ class TestTabularFigures:
         assert selectors[:2] == ["table", "table *"]
         assert '[data-testid="stMetricValue"]' in selectors
         assert ".sc-metric .value" in selectors
+
+
+# ── STEP 3: THE HOME BUTTON OPENS THE WORKED EXAMPLE TAB ────────────
+
+def _tab_sets(node):
+    """Every tab container under an AppTest node, in page order."""
+    found = []
+    for child in getattr(node, "children", {}).values():
+        if getattr(child, "type", None) == "tab_container":
+            found.append(child)
+        found.extend(_tab_sets(child))
+    return found
+
+
+class TestExampleTab:
+    """Home's button opens the Reconciliation page on its worked example tab;
+    the sidebar link still opens the first tab (UX2)."""
+
+    def test_ux2_button_opens_the_example_tab(self):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        at.button(key="btn_worked_example").click().run()
+        assert not at.exception
+        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        tab_sets = _tab_sets(at.main)
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 1
+        # The flag is one-off: it is gone once the page has read it.
+        assert "p5_open_example" not in at.session_state
+        assert at.session_state["live_client"] is None
+
+    def test_ux2_sidebar_link_still_opens_the_first_tab(self):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        assert _tab_sets(at.main)[0].proto.tab_container.default_tab_index == 0
+        # After the button has been used once, the page link opens the first tab.
+        at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+        at.button(key="btn_worked_example").click().run()
+        at.switch_page("pages/1_How_the_Model_Works.py").run()
+        at.switch_page("pages/2_Reconciliation.py").run()
+        assert not at.exception
+        assert _tab_sets(at.main)[0].proto.tab_container.default_tab_index == 0
