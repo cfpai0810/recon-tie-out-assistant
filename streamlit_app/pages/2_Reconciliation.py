@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import (
-    inject_css, break_badge_html, resolution_badge_html,
+    header_html, inject_css, break_badge_html, resolution_badge_html,
     DARK_BLUE, MUTED, RULE,
 )
 from streamlit_app.lib.key_gate import render_key_gate
@@ -47,14 +47,11 @@ from src.state import Break, BreakType, MatchType, ResolutionType, Resolution
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 # -- Header -------------------------------------------------------------------
-st.markdown(
-    '<div class="sc-header">'
-    '<h1>Reconciliation</h1>'
-    '<p>Match the bank statement against the cash book, classify breaks, '
-    'and resolve each difference with a clear audit trail.</p>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+st.markdown(header_html(
+    "Reconciliation",
+    "Match the bank statement against the cash book, classify breaks, "
+    "and resolve each difference with a clear audit trail."),
+    unsafe_allow_html=True)
 
 # -- Key gate (sidebar) -------------------------------------------------------
 client = render_key_gate()
@@ -94,94 +91,98 @@ except ValueError as exc:
 # INPUT TABLES
 # =============================================================================
 
-st.markdown("#### {}, June 2026".format(ENTITY_NAME))
-st.caption(
-    "Two different real-world formats: a bank statement export and a cash "
-    "book. The tool maps each into a common shape to reconcile across "
-    "the difference.")
-
-col_a, col_b = st.columns(2)
-
-_raw_cols_a, _raw_rows_a = load_raw_table(str(BANK_STATEMENT_FILE))
-_raw_cols_b, _raw_rows_b = load_raw_table(str(CASH_BOOK_FILE))
-
-with col_a:
-    st.markdown("**{}** ({} rows)".format(
-        loaded_state.side_a_label, len(_raw_rows_a)))
-    if _raw_rows_a:
-        st.dataframe(
-            pd.DataFrame(_raw_rows_a, columns=_raw_cols_a),
-            use_container_width=True,
-            hide_index=True,
-            height=530,
-        )
-
-with col_b:
-    st.markdown("**{}** ({} rows)".format(
-        loaded_state.side_b_label, len(_raw_rows_b)))
-    if _raw_rows_b:
-        st.dataframe(
-            pd.DataFrame(_raw_rows_b, columns=_raw_cols_b),
-            use_container_width=True,
-            hide_index=True,
-            height=530,
-        )
-
-if loaded_state.problems:
-    n_good = len(loaded_state.side_a) + len(loaded_state.side_b)
-    st.warning(
-        "{} row(s) could not be read and were skipped. "
-        "The reconciliation will run on the {} rows that were "
-        "successfully read.".format(
-            len(loaded_state.problems), n_good))
-    with st.expander("Skipped rows"):
-        for p in loaded_state.problems:
-            st.text("Side {}, row {}: {} ({})".format(
-                p.side, p.row_number, p.message, p.column))
-
 _MESSY_BANK = DATA_DIR / "messy_bank.csv"
 _MESSY_BOOK = DATA_DIR / "messy_book.csv"
 
-if _MESSY_BANK.exists() and _MESSY_BOOK.exists():
-    with st.expander("Messy data sample (Tier 2 edge cases)"):
-        st.caption(
-            "A second pair of files with heavier formatting: pound, "
-            "dollar, and euro currency symbols, European comma-decimal "
-            "notation, trailing minus signs, accounting parentheses in "
-            "debit/credit columns, leading plus signs, padded whitespace, "
-            "space-separated thousands, and extra chrome rows.")
-        _mc_a, _mr_a = load_raw_table(str(_MESSY_BANK))
-        _mc_b, _mr_b = load_raw_table(str(_MESSY_BOOK))
-        mc1, mc2 = st.columns(2)
-        with mc1:
-            st.markdown("**Messy bank** ({} rows)".format(len(_mr_a)))
-            if _mr_a:
-                st.dataframe(
-                    pd.DataFrame(_mr_a, columns=_mc_a),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        with mc2:
-            st.markdown("**Messy book** ({} rows)".format(len(_mr_b)))
-            if _mr_b:
-                st.dataframe(
-                    pd.DataFrame(_mr_b, columns=_mc_b),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        if st.button("Reconcile messy data", key="btn_reconcile_messy"):
-            try:
-                messy_state = _reconcile(str(_MESSY_BANK), str(_MESSY_BOOK))
-                st.success(
-                    "Loaded: {} bank rows, {} book rows. "
-                    "{} clean matches, {} breaks, raw difference {:,.2f}.".format(
-                        len(messy_state.side_a), len(messy_state.side_b),
-                        messy_state.matched_count, len(messy_state.breaks),
-                        messy_state.raw_difference))
-            except ValueError as exc:
-                st.error("Could not reconcile: {}".format(exc))
 
-st.markdown("---")
+def _render_inputs():
+    """The sample files as read, and the messy pair: the top of "Run it
+    yourself", above the tolerance inputs."""
+    st.markdown("#### {}, June 2026".format(ENTITY_NAME))
+    st.caption(
+        "Two different real-world formats: a bank statement export and a cash "
+        "book. The tool maps each into a common shape to reconcile across "
+        "the difference.")
+
+    col_a, col_b = st.columns(2)
+
+    _raw_cols_a, _raw_rows_a = load_raw_table(str(BANK_STATEMENT_FILE))
+    _raw_cols_b, _raw_rows_b = load_raw_table(str(CASH_BOOK_FILE))
+
+    with col_a:
+        st.markdown("**{}** ({} rows)".format(
+            loaded_state.side_a_label, len(_raw_rows_a)))
+        if _raw_rows_a:
+            st.dataframe(
+                pd.DataFrame(_raw_rows_a, columns=_raw_cols_a),
+                use_container_width=True,
+                hide_index=True,
+                height=530,
+            )
+
+    with col_b:
+        st.markdown("**{}** ({} rows)".format(
+            loaded_state.side_b_label, len(_raw_rows_b)))
+        if _raw_rows_b:
+            st.dataframe(
+                pd.DataFrame(_raw_rows_b, columns=_raw_cols_b),
+                use_container_width=True,
+                hide_index=True,
+                height=530,
+            )
+
+    if loaded_state.problems:
+        n_good = len(loaded_state.side_a) + len(loaded_state.side_b)
+        st.warning(
+            "{} row(s) could not be read and were skipped. "
+            "The reconciliation will run on the {} rows that were "
+            "successfully read.".format(
+                len(loaded_state.problems), n_good))
+        with st.expander("Skipped rows"):
+            for p in loaded_state.problems:
+                st.text("Side {}, row {}: {} ({})".format(
+                    p.side, p.row_number, p.message, p.column))
+
+    if _MESSY_BANK.exists() and _MESSY_BOOK.exists():
+        with st.expander("Messy data sample (Tier 2 edge cases)"):
+            st.caption(
+                "A second pair of files with heavier formatting: pound, "
+                "dollar, and euro currency symbols, European comma-decimal "
+                "notation, trailing minus signs, accounting parentheses in "
+                "debit/credit columns, leading plus signs, padded whitespace, "
+                "space-separated thousands, and extra chrome rows.")
+            _mc_a, _mr_a = load_raw_table(str(_MESSY_BANK))
+            _mc_b, _mr_b = load_raw_table(str(_MESSY_BOOK))
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown("**Messy bank** ({} rows)".format(len(_mr_a)))
+                if _mr_a:
+                    st.dataframe(
+                        pd.DataFrame(_mr_a, columns=_mc_a),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            with mc2:
+                st.markdown("**Messy book** ({} rows)".format(len(_mr_b)))
+                if _mr_b:
+                    st.dataframe(
+                        pd.DataFrame(_mr_b, columns=_mc_b),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            if st.button("Reconcile messy data", key="btn_reconcile_messy"):
+                try:
+                    messy_state = _reconcile(str(_MESSY_BANK), str(_MESSY_BOOK))
+                    st.success(
+                        "Loaded: {} bank rows, {} book rows. "
+                        "{} clean matches, {} breaks, raw difference {:,.2f}.".format(
+                            len(messy_state.side_a), len(messy_state.side_b),
+                            messy_state.matched_count, len(messy_state.breaks),
+                            messy_state.raw_difference))
+                except ValueError as exc:
+                    st.error("Could not reconcile: {}".format(exc))
+
+    st.markdown("---")
 
 
 # =============================================================================
@@ -864,20 +865,18 @@ def _render_example_break(brk, state, res, draft, is_ai=False):
 # TABS
 # =============================================================================
 
-st.markdown("#### Reconciliation")
-st.caption(
-    "Run the matching and classification pipeline, then review and "
-    "resolve each break. The AI explanations are optional and need an "
-    "API key.")
-
-# Home's "See the worked example" button opens this page on the example tab.
-_open_example = st.session_state.pop("p5_open_example", False)
-tab_live, tab_example = st.tabs(
-    ["Run it yourself", "View a worked example"],
-    default="View a worked example" if _open_example else None)
+# The worked example comes first and is selected on arrival, as in Project 6.
+# Everything that belongs to a live run sits inside "Run it yourself".
+tab_example, tab_live = st.tabs(["View a worked example", "Run it yourself"])
 
 
 with tab_live:
+    st.caption(
+        "Run the matching and classification pipeline, then review and "
+        "resolve each break. The AI explanations are optional and need an "
+        "API key.")
+    _render_inputs()
+
     tc1, tc2 = st.columns(2)
     with tc1:
         tol_abs_input = st.number_input(

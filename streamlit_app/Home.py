@@ -16,102 +16,69 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import header_html, inject_css
 from streamlit_app.lib.key_gate import render_key_gate
 
-# The worked example lives on the Reconciliation page, as its second tab. The
-# Home button sets this flag so that page opens on the example tab.
-OPEN_EXAMPLE_TAB = "p5_open_example"
+PAGES_DIR = Path(__file__).resolve().parent / "pages"
+
+# The pages, built once so Home's links and the navigation share them. Titles
+# are in sentence case; each address still comes from its file name.
+HOW_IT_WORKS = st.Page(str(PAGES_DIR / "1_How_the_Model_Works.py"),
+                       title="How it works", icon=":material/menu_book:")
+RECONCILIATION = st.Page(str(PAGES_DIR / "2_Reconciliation.py"),
+                         title="Reconciliation", icon=":material/balance:")
+OWN_DATA = st.Page(str(PAGES_DIR / "3_Your_Own_Data.py"),
+                   title="Your own data", icon=":material/upload_file:")
+HOW_ITS_BUILT = st.Page(str(PAGES_DIR / "4_How_Its_Built.py"),
+                        title="How it's built", icon=":material/build:")
 
 
 def _home_page():
     """Render the landing page content."""
     st.markdown(inject_css(), unsafe_allow_html=True)
+    st.markdown(header_html(
+        "Reconciliation and Tie-Out Assistant",
+        "A reconciliation tool for a finance controller: it checks whether a bank "
+        "statement and a cash book agree, and helps the reviewer resolve each "
+        "difference."),
+        unsafe_allow_html=True)
 
-    # -- Header ---------------------------------------------------------------
-    st.markdown(
-        '<div class="sc-header">'
-        '<h1>Reconciliation and Tie-Out Assistant</h1>'
-        '<p>A reconciliation tool for a finance controller: it checks '
-        'whether two records of the same transactions, a bank statement '
-        'and a cash book, agree. Where they do not, it classifies the '
-        'differences (called breaks) and helps the reviewer resolve each '
-        'one with a clear audit trail.</p>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    # -- The worked example, one click away and needing no key ----------------
+    # -- The worked example, one click away and needing no key: the
+    # Reconciliation page opens on it, its first tab.
     if st.button("See the worked example", key="btn_worked_example"):
-        st.session_state[OPEN_EXAMPLE_TAB] = True
-        st.switch_page("pages/2_Reconciliation.py")
+        st.switch_page(RECONCILIATION)
 
     # -- The key gate (sidebar): returns a per-session client or None ---------
     client = render_key_gate()
     st.session_state["live_client"] = client
 
-    # -- What this does -------------------------------------------------------
-    st.markdown("#### What this does")
-    st.write(
-        "The tool works in two layers. First, deterministic Python matches "
-        "every transaction between the bank statement and the cash book "
-        "using five rules (exact key, within tolerance, amount mismatch, "
-        "reference mismatch, many-to-one). Unmatched or mismatched items "
-        "become typed breaks. Then, on request, an AI layer explains each "
-        "break and suggests a follow-up action.")
-    st.write(
-        "The matching, classification, and reconciliation arithmetic run "
-        "without an API key. The break tables, the reconciled position, "
-        "and a worked example are all free to explore. Only the AI "
-        "explanations need an Anthropic API key.")
+    st.markdown("#### What it does")
+    st.markdown(
+        "- Reads a bank statement and a cash book (17 and 20 records, June 2026).\n"
+        "- Matches them by five rules: exact key, within tolerance, amount mismatch, "
+        "reference mismatch, many-to-one. Unmatched or mismatched items become typed "
+        "breaks.\n"
+        "- On request the model explains each break and suggests a follow-up.\n"
+        "- You decide every resolution, and the PDF report is a working copy until "
+        "you sign it off.")
 
-    st.markdown("---")
+    st.markdown("#### The governance promise")
+    st.markdown(
+        "- **Python matches.** Matching and reconciliation arithmetic run without a key.\n"
+        "- **A rule classifies.** Each break has a type by rule.\n"
+        "- **The model explains.** Suggestions only; you decide every resolution.\n"
+        "- **The reviewer signs.** Nothing is final until a reviewer reads it and signs.")
 
-    # -- Pages ----------------------------------------------------------------
     st.markdown("#### Pages")
-    st.write(
-        "**How it works** explains the tool in plain terms: the matching "
-        "rules, what makes a break, how the reconciled position is "
-        "computed, and what the output means for a reviewer.")
-    st.write(
-        "**Reconciliation** is the tool itself. It loads the sample bank "
-        "statement and cash book, runs the matching and classification "
-        "pipeline, and presents the breaks for resolution. A worked "
-        "example runs at the default settings with no API key.")
-    st.write(
-        "**Your own data** explains how to run the reconciliation on your "
-        "own bank statement and cash book locally: the file format, how "
-        "to run it, and what stays private.")
-    st.write(
-        "**How it's built** is the technical and governance story: the "
-        "deterministic matching core, the AI narration boundary, the "
-        "lock persistence model, and the review stance.")
-
-    st.markdown("---")
-
-    # -- Sample-data status ---------------------------------------------------
-    st.markdown("#### The sample company")
-    st.write(
-        "Everything here runs on Valencia Operations, a synthetic company "
-        "invented for the demo. Its bank statement and cash book describe "
-        "one month of transactions for June 2026, with 17 bank records and "
-        "20 book records. Because the company and its numbers are entirely "
-        "fictional, nothing you do on this site touches real or personal "
-        "information.")
-
-    DATA_DIR = ROOT / "data"
-    expected = ["bank_statement.csv", "cash_book.csv"]
-    present = [f for f in expected if (DATA_DIR / f).exists()]
-    if len(present) == len(expected):
-        st.success(
-            "Sample dataset loaded, {} of {} files present. "
-            "All figures on this site are illustrative.".format(
-                len(present), len(expected)))
-    else:
-        missing = [f for f in expected if f not in present]
-        st.warning(
-            "The sample data is incomplete. Missing: " + ", ".join(missing) +
-            ". The tool page needs these files in the project's data folder.")
+    st.page_link(HOW_IT_WORKS, label="How it works: the matching rules, what makes a "
+                 "break, and how the reconciled position is computed")
+    st.page_link(RECONCILIATION, label="Reconciliation: a worked example that needs no "
+                 "API key, and the tool itself")
+    st.page_link(OWN_DATA, label="Your own data: the file format, how to run it "
+                 "locally, and what stays private")
+    st.page_link(HOW_ITS_BUILT, label="How it's built: the deterministic matching "
+                 "core, the AI narration boundary, the lock persistence model and the "
+                 "review stance")
 
     # -- Using your own API key -----------------------------------------------
     with st.expander("Using your own API key"):
@@ -140,29 +107,32 @@ def _home_page():
             "your own numbers, run the project locally from GitHub.")
 
     st.divider()
-    st.caption("Sample data only. All figures are illustrative.")
+    st.caption("Sample data only: Valencia Operations is a fictional company. "
+               "All figures are illustrative.")
+
+    DATA_DIR = ROOT / "data"
+    expected = ["bank_statement.csv", "cash_book.csv"]
+    missing = [f for f in expected if not (DATA_DIR / f).exists()]
+    if missing:
+        st.warning(
+            "The sample data is incomplete. Missing: " + ", ".join(missing) +
+            ". The tool page needs these files in the project's data folder.")
 
 
 # -- Multipage navigation (Streamlit >= 1.36) ---------------------------------
 st.set_page_config(
     page_title="Reconciliation Assistant",
-    page_icon="•",
+    page_icon=":material/balance:",
     layout="centered",
     initial_sidebar_state="auto",
 )
 
-PAGES_DIR = Path(__file__).resolve().parent / "pages"
-
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),
-    st.Page(str(PAGES_DIR / "1_How_the_Model_Works.py"),
-            title="How It Works", icon=":material/menu_book:"),
-    st.Page(str(PAGES_DIR / "2_Reconciliation.py"),
-            title="Reconciliation", icon=":material/balance:"),
-    st.Page(str(PAGES_DIR / "3_Your_Own_Data.py"),
-            title="Your Own Data", icon=":material/upload_file:"),
-    st.Page(str(PAGES_DIR / "4_How_Its_Built.py"),
-            title="How It's Built", icon=":material/build:"),
+    HOW_IT_WORKS,
+    RECONCILIATION,
+    OWN_DATA,
+    HOW_ITS_BUILT,
 ])
 
 pg.run()

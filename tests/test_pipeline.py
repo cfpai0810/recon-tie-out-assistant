@@ -2456,9 +2456,9 @@ class TestFirstVisit:
         at.button(key="btn_worked_example").click().run()
         assert not at.exception
         assert any("<h1>Reconciliation</h1>" in m.value for m in at.markdown)
-        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
         assert any(m.value.startswith("##### Breaks: all five resolution types")
-                   for m in at.tabs[1].markdown)
+                   for m in at.tabs[0].markdown)
         assert at.session_state["live_client"] is None
 
 
@@ -2491,27 +2491,28 @@ def _tab_sets(node):
 
 
 class TestExampleTab:
-    """Home's button opens the Reconciliation page on its worked example tab;
-    the sidebar link still opens the first tab (UX2)."""
+    """Home's button opens the Reconciliation page on its worked example tab,
+    which is the first tab, so the sidebar link opens it too (UX2; since
+    Step 5 there is no session flag and no default= argument)."""
 
     def test_ux2_button_opens_the_example_tab(self):
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(_HOME), default_timeout=180).run()
         at.button(key="btn_worked_example").click().run()
         assert not at.exception
-        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
         tab_sets = _tab_sets(at.main)
         assert len(tab_sets) == 1
-        assert tab_sets[0].proto.tab_container.default_tab_index == 1
-        # The flag is one-off: it is gone once the page has read it.
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        # The button only switches page: it leaves no flag behind.
         assert "p5_open_example" not in at.session_state
         assert at.session_state["live_client"] is None
 
-    def test_ux2_sidebar_link_still_opens_the_first_tab(self):
+    def test_ux2_sidebar_link_opens_the_example_tab_too(self):
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
         assert _tab_sets(at.main)[0].proto.tab_container.default_tab_index == 0
-        # After the button has been used once, the page link opens the first tab.
+        # After the button has been used once, the page link opens the same tab.
         at = AppTest.from_file(str(_HOME), default_timeout=180).run()
         at.button(key="btn_worked_example").click().run()
         at.switch_page("pages/1_How_the_Model_Works.py").run()
@@ -2561,3 +2562,169 @@ class TestSignOffCount:
         assert not [s.value for s in at.success if "fully explained" in s.value]
         assert [i.value for i in at.info if "under investigation" in i.value] == [
             "All breaks have a decision, but 1 item is still under investigation."]
+
+
+# ── STEP 5a: LOOK AND LAYOUT, AS PROJECT 6 (V1 TO V5) ───────────────
+
+_PAGES = ROOT / "streamlit_app" / "pages"
+
+# Every page and the title its banner carries, in the navigation order.
+_BANNERS = [
+    (_HOME, "Reconciliation and Tie-Out Assistant"),
+    (_PAGES / "1_How_the_Model_Works.py", "How it works"),
+    (_PAGES / "2_Reconciliation.py", "Reconciliation"),
+    (_PAGES / "3_Your_Own_Data.py", "Your own data"),
+    (_PAGES / "4_How_Its_Built.py", "How it's built"),
+]
+
+
+@pytest.fixture
+def app_shell(monkeypatch):
+    """Runs Home.py and records what it hands to st.set_page_config and
+    st.navigation: the page icon, and each page's address, title and icon."""
+    import streamlit
+    seen = {}
+    navigation, set_page_config = streamlit.navigation, streamlit.set_page_config
+
+    def _navigation(pages, *args, **kwargs):
+        result = navigation(pages, *args, **kwargs)
+        seen["pages"] = [(p.url_path, p.title, p.icon) for p in pages]
+        return result
+
+    def _set_page_config(*args, **kwargs):
+        seen["config"] = kwargs
+        return set_page_config(*args, **kwargs)
+
+    monkeypatch.setattr(streamlit, "navigation", _navigation)
+    monkeypatch.setattr(streamlit, "set_page_config", _set_page_config)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+    assert not at.exception
+    return at, seen
+
+
+class TestStep5aLook:
+    """The series look, taken from Project 6 in the navy (Step 5a)."""
+
+    def test_v1_primary_colour_is_the_navy(self):
+        import tomllib
+        from streamlit_app.lib.theme import DARK_BLUE
+        config = tomllib.loads(
+            (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+        assert config["theme"]["primaryColor"] == DARK_BLUE == "#1A3A5C"
+        assert config["client"]["toolbarMode"] == "minimal"
+
+    def test_v2_every_page_has_a_banner(self):
+        import html
+        from streamlit.testing.v1 import AppTest
+        for path, title in _BANNERS:
+            at = AppTest.from_file(str(path), default_timeout=180).run()
+            assert not at.exception, path.name
+            banners = [m.value for m in at.markdown if 'class="sc-header"' in m.value]
+            assert len(banners) == 1, path.name
+            assert banners[0].startswith(
+                '<div class="sc-header"><h1>{}</h1><p>'.format(html.escape(title)))
+            # The banner is the page's first element, after the page's CSS.
+            assert list(at.main.children.values())[1].value == banners[0], path.name
+        # Every banner goes through header_html: none is written out by hand.
+        for path, _ in _BANNERS:
+            source = path.read_text(encoding="utf-8")
+            assert "header_html(" in source and "sc-header" not in source, path.name
+
+    def test_v2_draft_and_final_chips(self):
+        from streamlit_app.lib.theme import (
+            DRAFT_CHIP, FINAL_CHIP, inject_css, status_chip_html,
+        )
+        assert status_chip_html("final") == '<span class="sc-status final">FINAL</span>'
+        for status in ("draft", "", None, "FINAL", "signed"):
+            assert status_chip_html(status) == '<span class="sc-status draft">DRAFT</span>'
+        assert (DRAFT_CHIP, FINAL_CHIP) == ("#B45F06", "#2E6B3F")
+        css = inject_css()
+        assert ".sc-status.draft { background: #B45F06; }" in css
+        assert ".sc-status.final { background: #2E6B3F; }" in css
+
+    def test_v3_home_blocks_and_page_links(self, app_shell):
+        from config import BANK_STATEMENT_FILE, CASH_BOOK_FILE
+        from src.step1_load import load
+        at, _ = app_shell
+        main = list(at.main.children.values())
+        assert main[1].value.startswith('<div class="sc-header">')
+        assert main[2].label == "See the worked example"
+        values = [getattr(e, "value", None) for e in main]
+        headings = [v for v in values if isinstance(v, str) and v.startswith("####")]
+        assert headings == ["#### What it does", "#### The governance promise", "#### Pages"]
+        # The record counts Home quotes are the sample's.
+        state = load(str(BANK_STATEMENT_FILE), str(CASH_BOOK_FILE))
+        what = values[values.index("#### What it does") + 1]
+        assert "({} and {} records, June 2026)".format(
+            len(state.side_a), len(state.side_b)) == "(17 and 20 records, June 2026)"
+        assert "(17 and 20 records, June 2026)" in what
+        promise = values[values.index("#### The governance promise") + 1]
+        assert [line.split("**")[1] for line in promise.splitlines()] == [
+            "Python matches.", "A rule classifies.", "The model explains.",
+            "The reviewer signs."]
+        # One link per page except Home, in the navigation order, then the key
+        # explainer (closed, cost figures kept), then one closing caption.
+        start = values.index("#### Pages")
+        links = main[start + 1:start + 5]
+        assert [e.proto.page for e in links] == [
+            "How_the_Model_Works", "Reconciliation", "Your_Own_Data", "How_Its_Built"]
+        assert [e.proto.label.split(":")[0] for e in links] == [
+            "How it works", "Reconciliation", "Your own data", "How it's built"]
+        assert len(at.get("page_link")) == 4
+        # They wrap rather than clip on a phone, as Project 6's do.
+        from streamlit_app.lib.theme import inject_css
+        assert ('[data-testid="stPageLink-NavLink"], [data-testid="stPageLink-NavLink"] * {\n'
+                '        white-space: normal !important;') in inject_css()
+        explainer = main[start + 5]
+        assert explainer.label == "Using your own API key"
+        assert explainer.proto.expanded is False
+        assert any("costs about 2 US cents" in m.value for m in explainer.markdown)
+        assert type(main[-2]).__name__ == "Divider"
+        assert main[-1].value == ("Sample data only: Valencia Operations is a fictional "
+                                  "company. All figures are illustrative.")
+        assert not at.success and not at.warning
+
+    def test_v4_titles_are_sentence_case_and_urls_unchanged(self, app_shell):
+        # Every page address as published before Step 5 (main at 1f066d3).
+        # Titles changed; file names and addresses did not.
+        urls = ["", "How_the_Model_Works", "Reconciliation", "Your_Own_Data",
+                "How_Its_Built"]
+        _, seen = app_shell
+        assert [url for url, _, _ in seen["pages"]] == urls
+        titles = [title for _, title, _ in seen["pages"]]
+        assert titles == ["Home", "How it works", "Reconciliation", "Your own data",
+                          "How it's built"]
+        assert all(t == t[0] + t[1:].lower() for t in titles)
+        assert sorted(p.name for p in _PAGES.glob("*.py")) == [
+            "1_How_the_Model_Works.py", "2_Reconciliation.py", "3_Your_Own_Data.py",
+            "4_How_Its_Built.py"]
+
+    def test_v5_example_tab_first_and_no_open_example_flag(self):
+        import re
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        assert not at.exception
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
+        main = list(at.main.children.values())
+        # The tab bar sits directly under the banner, selected on the example.
+        assert main[1].value.startswith('<div class="sc-header">')
+        assert main[2].type == "tab_container"
+        assert main[2].proto.tab_container.default_tab_index == 0
+        # The live run lives in "Run it yourself": the data preview, the
+        # tolerance inputs and Reconcile; the example tab has none of them.
+        example, live = at.tabs
+        assert any(m.value == "#### Valencia Operations, June 2026" for m in live.markdown)
+        assert [n.key for n in live.number_input] == ["tol_abs", "tol_rel_pct"]
+        assert [b.key for b in live.button if b.key == "btn_reconcile"] == ["btn_reconcile"]
+        assert not example.number_input
+        assert not [b for b in example.button if b.key == "btn_reconcile"]
+        for path in (ROOT / "streamlit_app").rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            assert "_open_example" not in source, path.name
+            assert not re.search(r"st\.tabs\([^)]*default=", source), path.name
+
+    def test_v5_page_icon_is_the_tool_page_icon(self, app_shell):
+        _, seen = app_shell
+        icons = {title: icon for _, title, icon in seen["pages"]}
+        assert seen["config"]["page_icon"] == icons["Reconciliation"] == ":material/balance:"

@@ -22,6 +22,11 @@ MUTED      = "#898781"
 RULE       = "#D3D1C7"
 NEAR_WHITE = "#FBFAF7"
 
+# Status chips: amber DRAFT and green FINAL, the series' sign-off colours (as
+# Project 6's screen and PDF use them)
+DRAFT_CHIP = "#B45F06"
+FINAL_CHIP = "#2E6B3F"
+
 # Break-type badge colours (background, text)
 BREAK_BADGE = {
     "amount_mismatch":        (AMBER_BG,    AMBER),
@@ -89,6 +94,24 @@ def inject_css():
       .sc-header p  {{
         font-family: {SANS};
         color: #AACCEE; margin: 6px 0 0; font-size: 0.92rem; font-weight: 400;
+      }}
+
+      /* Status chip: amber DRAFT, green FINAL */
+      .sc-status {{
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: white;
+      }}
+      .sc-status.draft {{ background: {DRAFT_CHIP}; }}
+      .sc-status.final {{ background: {FINAL_CHIP}; }}
+
+      /* Page links wrap rather than clip on a phone */
+      [data-testid="stPageLink-NavLink"], [data-testid="stPageLink-NavLink"] * {{
+        white-space: normal !important; height: auto !important;
       }}
 
       /* Status badge (break type, resolution type) */
@@ -171,3 +194,16 @@ def resolution_badge_html(resolution_type):
     bg, fg = RESOLUTION_BADGE[key]
     return (f'<span class="sc-badge" style="background:{bg};color:{fg};">'
             f'{label}</span>')
+
+
+def header_html(title, subtitle):
+    """The page banner: the series navy band with the page's name and one line."""
+    import html
+    return (f'<div class="sc-header"><h1>{html.escape(title)}</h1>'
+            f'<p>{html.escape(subtitle)}</p></div>')
+
+
+def status_chip_html(status):
+    """The DRAFT or FINAL chip. Anything but "final" reads DRAFT."""
+    label = "FINAL" if status == "final" else "DRAFT"
+    return f'<span class="sc-status {label.lower()}">{label}</span>'

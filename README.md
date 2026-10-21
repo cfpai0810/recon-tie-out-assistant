@@ -70,7 +70,7 @@ All three layouts are normalised to these four internal fields:
 | `amount` | Signed amount (positive = receipt) | `-2,400.00` |
 | `description` | Free text | `Grafton Estates rent` |
 
-See the Your Own Data page in the web app for example rows in each
+See the Your own data page in the web app for example rows in each
 layout.
 
 ### Accepted formats
@@ -322,6 +322,7 @@ and no `.env` file.
 ```
 main.py                          CLI orchestrator: seven-phase pipeline
 config.py                        Layer 1: file paths, tolerance, entity name
+.streamlit/config.toml           Web theme: navy controls, minimal toolbar
 
 src/
   state.py                       Shared type definitions (enums, dataclasses, state)
@@ -336,7 +337,7 @@ src/
 streamlit_app/
   Home.py                        Entry point, landing page, API key gate
   lib/
-    theme.py                     Palette, CSS, badge helpers
+    theme.py                     Palette, CSS, banner, badge and status chip helpers
     key_gate.py                  Sidebar API key input
     claude_client.py             BYO-key client builder
     audit.py                     Session audit: build_audit_record, record_run
@@ -352,7 +353,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               178 tests
+  test_pipeline.py               185 tests
 
 output/                          Generated files (gitignored)
 ```
@@ -372,7 +373,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-178 tests, no real API calls:
+185 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

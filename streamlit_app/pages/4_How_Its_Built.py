@@ -19,18 +19,22 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css, DARK_BLUE, MID_BLUE, MUTED, SANS
+from streamlit_app.lib.theme import (
+    header_html, inject_css, DARK_BLUE, MID_BLUE, MUTED, SANS,
+)
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 
-# -- Title --------------------------------------------------------------------
-st.markdown("### How it's built")
-st.write(
+# -- Banner -------------------------------------------------------------------
+st.markdown(header_html(
+    "How it's built",
     "This tool was built on one idea: an AI system that touches financial "
-    "numbers has to earn trust before it earns time. The sections below "
-    "explain how that idea shapes the design, first for a finance reader "
-    "and then in technical detail.")
+    "numbers has to earn trust before it earns time."),
+    unsafe_allow_html=True)
+st.write(
+    "The sections below explain how that idea shapes the design, first for "
+    "a finance reader and then in technical detail.")
 
 # -- Part 1: the trust story (finance reader) ---------------------------------
 st.markdown("---")

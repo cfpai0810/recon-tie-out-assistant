@@ -11,18 +11,17 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import header_html, inject_css
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 
-st.markdown("### Your own data")
-st.write(
+st.markdown(header_html(
+    "Your own data",
     "How to run the reconciliation (the two-side matching check) on "
-    "your own bank statement and cash book. Everything runs locally on "
-    "your machine; nothing is uploaded.")
-
-st.markdown("---")
+    "your own bank statement and cash book."),
+    unsafe_allow_html=True)
+st.write("Everything runs locally on your machine; nothing is uploaded.")
 
 
 # -- The two data files -------------------------------------------------------
