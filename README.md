@@ -333,6 +333,7 @@ src/
   step5_narrate.py               Layer 6: AI explanations or templated fallback
   step6_resolve.py               Layer 7: resolution actions, lock persistence
   step7_record.py                Layer 8: PDF report, JSONL audit trail
+  signoff.py                     The sign-off rule: a named reviewer types SIGN (DRAFT or FINAL)
 
 streamlit_app/
   Home.py                        Entry point, landing page, API key gate
@@ -344,7 +345,7 @@ streamlit_app/
     errors.py                    Friendly API error messages
   pages/
     1_How_the_Model_Works.py     Plain-language explanation of the tool
-    2_Reconciliation.py          The tool: matching, breaks, resolution, PDF
+    2_Reconciliation.py          The tool: matching, breaks, resolution, sign-off, PDF
     3_Your_Own_Data.py           Schema, accepted formats, run commands, limits
     4_How_Its_Built.py           Technical and governance detail
 
@@ -353,7 +354,8 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               185 tests
+  test_pipeline.py               197 tests
+  test_signoff.py                8 tests: the sign-off rule
 
 output/                          Generated files (gitignored)
 ```
@@ -373,16 +375,16 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-185 tests, no real API calls:
+205 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests/test_pipeline.py -v
+pytest tests -v
 ```
 
 The test classes cover loading, matching, classification, narration,
 resolution, lock persistence, stale-lock detection, PDF generation,
-audit records, amount coercion (currency, parentheses, trailing minus,
+audit records, the sign-off rule and section, amount coercion (currency, parentheses, trailing minus,
 comma-decimal, spaces), date coercion (8 of the 11 accepted formats),
 blank rows, missing/extra columns, encoding fallback, and mixed
 dirty/clean files.

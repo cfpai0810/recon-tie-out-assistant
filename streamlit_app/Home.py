@@ -59,15 +59,16 @@ def _home_page():
         "reference mismatch, many-to-one. Unmatched or mismatched items become typed "
         "breaks.\n"
         "- On request the model explains each break and suggests a follow-up.\n"
-        "- You decide every resolution, and the PDF report is a working copy until "
-        "you sign it off.")
+        "- You decide every resolution, and the PDF report is a DRAFT until a named "
+        "reviewer signs it.")
 
     st.markdown("#### The governance promise")
     st.markdown(
         "- **Python matches.** Matching and reconciliation arithmetic run without a key.\n"
         "- **A rule classifies.** Each break has a type by rule.\n"
         "- **The model explains.** Suggestions only; you decide every resolution.\n"
-        "- **The reviewer signs.** Nothing is final until a reviewer reads it and signs.")
+        "- **The reviewer signs.** Nothing is final until a named reviewer reads it and "
+        "signs.")
 
     st.markdown("#### Pages")
     st.page_link(HOW_IT_WORKS, label="How it works: the matching rules, what makes a "

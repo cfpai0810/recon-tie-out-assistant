@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -34,6 +35,7 @@ from reportlab.platypus import (
     KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
+from src.signoff import SignOff, pdf_name, pdf_status_line
 from src.state import (
     BreakType, MatchType, ReconciliationState, ResolutionType,
 )
@@ -84,6 +86,19 @@ S_HDR_R = ParagraphStyle("HdrR", fontName="Helvetica-Bold", fontSize=8,
                           textColor=DARK_BLUE, leading=10, alignment=TA_RIGHT)
 S_COMPRISING = ParagraphStyle("Comprising", fontName="Helvetica-Oblique",
                                fontSize=8, textColor=MUTED, leading=10)
+S_STATUS = ParagraphStyle("Status", fontName="Helvetica-Bold", fontSize=10,
+                          textColor=DARK_BLUE, leading=13)
+
+
+def _pdf_safe(text: str) -> str:
+    """Text for a Paragraph, with &, < and > escaped, so a reviewer's name
+    prints as typed and is never read as markup."""
+    return escape(text)
+
+
+# The default of build_pdf_bytes' signoff: a PDF the web page did not ask
+# for (the CLI's record()), printed as it always was.
+NOT_ON_THE_WEB = object()
 
 
 def _audit_record(state: ReconciliationState, *,
@@ -156,7 +171,7 @@ def _audit_record(state: ReconciliationState, *,
 
 
 def build_pdf_bytes(state: ReconciliationState, *,
-                    signed_off_at: str | None = None,
+                    signoff=NOT_ON_THE_WEB,
                     tolerance_abs: float = 0.02,
                     tolerance_rel: float = 0) -> bytes:
     """Build the PDF reconciliation report in memory.
@@ -168,6 +183,12 @@ def build_pdf_bytes(state: ReconciliationState, *,
     position), and a break-by-break detail table with resolutions. A
     controller files this report as evidence that the reconciliation was
     performed.
+
+    signoff is the web page's sign-off (src/signoff.py): None for a DRAFT
+    or a SignOff for a FINAL (a live run, or the worked example signed by
+    its sample reviewer). Only then does the PDF carry its status line near
+    the top, and a FINAL the reviewer's name and time. Left at its default
+    (the CLI's record()), the PDF prints as it always has.
     """
 
     # ── Compute figures (matching the web position panel) ────────────
@@ -213,10 +234,13 @@ def build_pdf_bytes(state: ReconciliationState, *,
     ) + part_adjusted
 
     # ── Status ───────────────────────────────────────────────────────
-    if signed_off_at and open_count == 0:
+    on_the_web = signoff is not NOT_ON_THE_WEB
+    live = signoff if on_the_web else None     # the web's SignOff, or None
+    signed = live is not None
+    if signed and open_count == 0:
         banner_text = "RECONCILED"
         banner_bg, banner_fg = GREEN_BG, GREEN
-    elif signed_off_at:
+    elif signed:
         n_word = f"{open_count} OPEN ITEM" + ("S" if open_count != 1 else "")
         banner_text = f"RECONCILED WITH {n_word}"
         banner_bg, banner_fg = AMBER_BG, AMBER
@@ -261,6 +285,9 @@ def build_pdf_bytes(state: ReconciliationState, *,
     story.append(Spacer(1, 4))
     story.append(Paragraph(side_label, S_BODY))
     story.append(Paragraph(f"Generated: {now}", S_SMALL))
+    if on_the_web:
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(_pdf_safe(pdf_status_line(live)), S_STATUS))
     story.append(Spacer(1, 14))
 
     # ── TIER 1: status banner ────────────────────────────────────────
@@ -474,9 +501,10 @@ def build_pdf_bytes(state: ReconciliationState, *,
     sign_items.append(Paragraph("Sign-off", S_H2))
     sign_items.append(Spacer(1, 6))
 
-    if signed_off_at:
-        sign_items.append(Paragraph(
-            f"<b>Signed off:</b> {signed_off_at}", S_BODY))
+    if live is not None:
+        # The rule's own signed line, with the name as the PDF fonts print it
+        named = SignOff(pdf_name(live.name), live.signed_at)
+        sign_items.append(Paragraph(_pdf_safe(named.line), S_BODY))
     else:
         s_muted = ParagraphStyle(
             "s_sign_muted", fontName="Helvetica-Oblique",
@@ -486,10 +514,10 @@ def build_pdf_bytes(state: ReconciliationState, *,
 
     # The review sentence states the real state, never more than happened.
     items = f"{open_count} open item" + ("s" if open_count != 1 else "")
-    if signed_off_at and open_count == 0:
+    if signed and open_count == 0:
         review = (": a human reviewer resolved every break and signed off "
                   "the result.")
-    elif signed_off_at:
+    elif signed:
         review = f": a human reviewer signed off the result with {items}."
     elif open_count:
         review = (f". This is a working copy, {items}, not yet signed off "

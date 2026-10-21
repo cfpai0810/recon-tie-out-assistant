@@ -2298,6 +2298,13 @@ class TestRetryDrafts:
 
 # ── STEP 2: PART ADJUSTMENTS, THE PDF'S REVIEW SENTENCE, SIDEBAR ────
 
+def _pdf_unescape(match):
+    """One PDF string escape: an octal code (a character such as é) or a
+    character taken as it is."""
+    code = match.group(1)
+    return bytes([int(code, 8)]) if code[0] in b"01234567" else code
+
+
 def _pdf_text(pdf):
     """The text of a ReportLab PDF, read with the standard library only."""
     import base64
@@ -2307,7 +2314,8 @@ def _pdf_text(pdf):
     for raw in re.findall(rb"stream\r?\n(.*?)endstream", pdf, re.S):
         data = zlib.decompress(base64.a85decode(raw.strip().removesuffix(b"~>")))
         for s in re.findall(rb"\(((?:[^()\\]|\\.)*)\)\s*Tj", data):
-            out.append(re.sub(rb"\\(.)", rb"\1", s).decode("latin-1"))
+            out.append(re.sub(rb"\\([0-7]{1,3}|.)", _pdf_unescape, s, flags=re.S)
+                       .decode("latin-1"))
     return " ".join(" ".join(out).split())
 
 
@@ -2395,12 +2403,15 @@ class TestPdfReviewSentence:
     """The PDF claims a full human review only when one happened."""
 
     def test_item26_pdf_sentence_follows_the_real_state(self):
+        from datetime import datetime, timezone
+        from src.signoff import SignOff
         from src.step7_record import build_pdf_bytes
+        reviewer = SignOff("A. Controller", datetime(2026, 6, 30, 15, 5, tzinfo=timezone.utc))
         done, open_state = _sample_resolved(72.00), _classified_sample()
-        signed = _pdf_text(build_pdf_bytes(done, signed_off_at="30 June 2026 15:05 UTC"))
+        signed = _pdf_text(build_pdf_bytes(done, signoff=reviewer))
         unsigned = _pdf_text(build_pdf_bytes(done))
         unsigned_open = _pdf_text(build_pdf_bytes(open_state))
-        signed_open = _pdf_text(build_pdf_bytes(open_state, signed_off_at="1 July 2026"))
+        signed_open = _pdf_text(build_pdf_bytes(open_state, signoff=reviewer))
         claim = "a human reviewer resolved every break and signed off the result."
         assert "advisory only: " + claim in signed
         assert "This is a working copy, not yet signed off by a reviewer." in unsigned
@@ -2524,7 +2535,7 @@ class TestExampleTab:
 # ── STEP 3: THE PAGE'S SIGN-OFF LINE COUNTS LIKE THE PDF ────────────
 
 class TestSignOffCount:
-    """The sign-off line counts open breaks as the PDF counts open items."""
+    """The sign-off section counts open breaks as the PDF counts open items."""
 
     def test_fix_page_signoff_counts_like_the_pdf(self):
         from streamlit.testing.v1 import AppTest
@@ -2543,15 +2554,23 @@ class TestSignOffCount:
         del state.resolutions[left.stable_break_key]
         pdf = _pdf_text(build_pdf_bytes(state))
         assert "This is a working copy, 3 open items, not yet signed off" in pdf
+        assert "Remaining unexplained 1,316.00" in pdf
 
         at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180)
         at.session_state["p5_resolutions"] = dict(state.resolutions)
         at.session_state["reconciled"] = True
         at.run()
         assert not at.exception
-        assert [i.value for i in at.info if "still open" in i.value] == [
-            "3 breaks still open. You can still sign off; the report will "
-            "note them as unresolved."]
+        # Since Step 5b the Sign-off section lists the open items, one line
+        # each, and the amount the PDF calls "Remaining unexplained".
+        section = _signoff_section(at)
+        assert section[3] == "Outstanding before you sign:"
+        assert _numbered(section[4]) == [
+            "Amount mismatch INV-2214, difference 72.00: adjusted 1.00, 71.00 still "
+            "unexplained.",
+            "Unmatched CHG-Q2, difference -30.00: under investigation.",
+            "Unmatched CHQ-1043, difference 1,275.00: not yet resolved."]
+        assert section[5] == "Remaining unexplained: 1,316.00."
 
     def test_fix_example_not_fully_explained_while_investigating(self):
         # The worked example leaves CHG-Q2 under investigation: the position
@@ -2728,3 +2747,339 @@ class TestStep5aLook:
         _, seen = app_shell
         icons = {title: icon for _, title, icon in seen["pages"]}
         assert seen["config"]["page_icon"] == icons["Reconciliation"] == ":material/balance:"
+
+
+# ── STEP 5b: THE SIGN-OFF SECTION, AS PROJECT 6 ─────────────────────
+
+_SENTENCE = "Signing says you have reviewed the breaks and your decisions above."
+_DRAFT_CHIP = '<span class="sc-status draft">DRAFT</span>'
+_FINAL_CHIP = '<span class="sc-status final">FINAL</span>'
+# The sample with no decisions: eight open breaks and what they leave
+_SAMPLE_OPEN = [
+    "Amount mismatch INV-2214, difference 72.00: not yet resolved.",
+    "Many-to-one suggestion DEP-0629, RCT-W1, RCT-W2, RCT-W3, difference 0.00: "
+    "not yet resolved.",
+    "Reference mismatch TRF-998812, TRF-5567, difference 0.00: not yet resolved.",
+    "Unmatched CHG-Q2, difference -30.00: not yet resolved.",
+    "Unmatched CHQ-1043, difference 1,275.00: not yet resolved.",
+    "Unmatched RCT-DEL, difference -450.00: not yet resolved.",
+    "Unmatched RCT-0629, difference -2,260.30: not yet resolved.",
+    "Unmatched INT-JUN, difference 12.15: not yet resolved.",
+]
+_SAMPLE_LEFT = "Remaining unexplained: -1,381.15."
+
+
+def _signoff_section(at):
+    """The Sign-off section's text, from its heading on ("Run it yourself")."""
+    values = [m.value for m in at.tabs[1].markdown]
+    return values[values.index("##### Sign-off"):]
+
+
+def _numbered(markdown):
+    """The lines of a numbered markdown list, without their numbers."""
+    lines = markdown.splitlines()
+    assert [line.split(". ", 1)[0] for line in lines] == [
+        str(i) for i in range(1, len(lines) + 1)]
+    return [line.split(". ", 1)[1] for line in lines]
+
+
+@pytest.fixture
+def downloads(monkeypatch):
+    """Reads the file behind a download button: while the test runs, every
+    file the page hands to one is kept by its media id."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+    files = {}
+    load = MemoryMediaFileStorage.load_and_get_id
+
+    def _load(self, data, mimetype, kind, filename=None):
+        file_id = load(self, data, mimetype, kind, filename)
+        files[file_id] = self.get_file(file_id).content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", _load)
+
+    def read(at, label):
+        (button,) = [d for d in at.get("download_button") if d.proto.label == label]
+        return files[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+    return read
+
+
+def _sign(at, name="José Núñez", word="SIGN"):
+    at.text_input(key="p5_reviewer").input(name).run()
+    at.text_input(key="p5_sign").input(word).run()
+    at.button(key="btn_signoff").click().run()
+    assert not at.exception
+
+
+def _boxes(at):
+    return [(t.key, t.value) for t in at.text_input if t.key in ("p5_reviewer", "p5_sign")]
+
+
+def _signoff_buttons(at):
+    return [b for b in at.button if b.key == "btn_signoff"]
+
+
+@pytest.fixture
+def reconciled(stand_in_anthropic):
+    """The page after Reconcile and Draft explanations, with the stand-in client."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+    at.sidebar.text_input(key="byo_api_key").input(_TEST_KEY).run()
+    at.button(key="btn_reconcile").click().run()
+    at.button(key="btn_draft").click().run()
+    assert not at.exception
+    assert any(s.value.startswith("AI explanations drafted for all") for s in at.success)
+    return at
+
+
+class TestStep5bSignOff:
+    """The Sign-off section: the rule in src/signoff.py, drawn as in Project 6."""
+
+    def test_5b_no_section_before_a_result(self):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        assert not at.exception
+        assert "##### Sign-off" not in [m.value for m in at.markdown]
+        assert not _boxes(at) and not _signoff_buttons(at)
+        # The worked example has its own report and no section to sign.
+        assert not [m for m in at.tabs[0].markdown if "Sign-off" in m.value]
+
+    def test_5b_from_run_to_final(self, downloads, reconciled):
+        from src.signoff import (
+            NAME_REFUSAL, SCOPE_NOTE, WORD_HELP, WORD_LABEL, WORD_REFUSAL, when_text,
+        )
+        at = reconciled
+        live = at.tabs[1]
+        # After the reconciled position, at the level of its sibling sections
+        headings = [m.value for m in live.markdown if m.value.startswith("#")]
+        assert headings[-2:] == ["##### Reconciled position", "##### Sign-off"]
+        section = _signoff_section(at)
+        assert section == ["##### Sign-off", _SENTENCE, _DRAFT_CHIP,
+                           "Outstanding before you sign:", section[4], _SAMPLE_LEFT]
+        assert _numbered(section[4]) == _SAMPLE_OPEN
+        assert [(t.label, t.help) for t in live.text_input
+                if t.key in ("p5_reviewer", "p5_sign")] == [
+            ("Reviewer name", ""), (WORD_LABEL, WORD_HELP)]
+        (button,) = _signoff_buttons(at)
+        assert button.label == "Sign off" and button.proto.type == "primary"
+        assert [c.value for c in live.caption].count(SCOPE_NOTE) == 1
+        draft = _pdf_text(downloads(at, "Download the DRAFT PDF"))
+        assert "Generated: " in draft and "DRAFT: not signed off WORKING COPY" in draft
+
+        # Refused: no name, a wrong word, the word in lower case. Each stays DRAFT.
+        for name, word, refusal in [("   ", "SIGN", NAME_REFUSAL),
+                                    ("José Núñez", "SIGNED", WORD_REFUSAL),
+                                    ("José Núñez", "sign", WORD_REFUSAL)]:
+            _sign(at, name, word)
+            assert [w.value for w in at.tabs[1].warning] == [refusal]
+            assert _signoff_section(at)[2] == _DRAFT_CHIP
+            assert "p5_signed_off" not in at.session_state
+            assert "recon_audit" not in at.session_state
+
+        # Signed: FINAL, the signed line, read only, the FINAL PDF
+        _sign(at, "José Núñez", " SIGN ")
+        signed = at.session_state["p5_signed_off"]
+        when = when_text(signed.signed_at)
+        line = "Signed off by José Núñez on {}.".format(when)
+        assert _signoff_section(at) == [
+            "##### Sign-off", _SENTENCE, "{}&nbsp; {}".format(_FINAL_CHIP, line)]
+        assert not at.tabs[1].warning
+        assert not _boxes(at) and not _signoff_buttons(at)
+        assert [c.value for c in at.tabs[1].caption].count(SCOPE_NOTE) == 1
+        assert not [d for d in at.get("download_button")
+                    if d.proto.label == "Download the DRAFT PDF"]
+        final = _pdf_text(downloads(at, "Download the FINAL PDF"))
+        assert "FINAL: signed off by José Núñez on {} RECONCILED WITH 8 OPEN ITEMS".format(
+            when) in final
+        assert line in final and "DRAFT: not signed off" not in final
+
+        # The session audit row carries the sign-off and what it acknowledged
+        (row,) = at.session_state["recon_audit"]
+        assert {k: row[k] for k in ("status", "signed_off_by", "signed_off_at")} == {
+            "status": "final", "signed_off_by": "José Núñez",
+            "signed_off_at": signed.signed_at.isoformat()}
+        assert row["acknowledged_at_sign_off"] == _SAMPLE_OPEN + [_SAMPLE_LEFT]
+        assert row["break_count"] == 8
+
+    def test_5b_a_second_signoff_is_refused(self, reconciled):
+        from src.signoff import ALREADY_SIGNED
+        at = reconciled
+        _sign(at)
+        signed = at.session_state["p5_signed_off"]
+        result = at.session_state["p5_signed_for"]
+        # The page offers no second Sign off.
+        assert not _signoff_buttons(at) and not _boxes(at)
+        # And the rule refuses one: the same result, signed again while a
+        # sign-off for it stands (a second click that lands after the first).
+        at.number_input(key="tol_abs").set_value(0.03).run()
+        at.number_input(key="tol_abs").set_value(0.02).run()
+        at.text_input(key="p5_sign").input("SIGN").run()
+        at.session_state["p5_signed_off"] = signed
+        at.session_state["p5_signed_for"] = result
+        at.button(key="btn_signoff").click().run()
+        assert not at.exception
+        assert [w.value for w in at.tabs[1].warning] == [ALREADY_SIGNED]
+        assert at.session_state["p5_signed_off"] == signed
+        assert len(at.session_state["recon_audit"]) == 1
+        assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
+
+    def test_5b_a_decision_changed_after_signoff_is_a_new_draft(self, downloads, reconciled):
+        at = reconciled
+        _sign(at)
+        confirm = next(b for b in at.button if (b.key or "").startswith("m2o_confirm_"))
+        confirm.click().run()
+        assert not at.exception
+        section = _signoff_section(at)
+        assert section[2] == _DRAFT_CHIP
+        assert _numbered(section[4]) == [_SAMPLE_OPEN[0]] + _SAMPLE_OPEN[2:]
+        # The name stays filled in; SIGN must be typed again.
+        assert _boxes(at) == [("p5_reviewer", "José Núñez"), ("p5_sign", "")]
+        assert "p5_signed_off" not in at.session_state
+        assert "DRAFT: not signed off" in _pdf_text(downloads(at, "Download the DRAFT PDF"))
+        _sign(at)
+        assert len(at.session_state["recon_audit"]) == 2
+        assert at.session_state["recon_audit"][0]["acknowledged_at_sign_off"] == (
+            [_SAMPLE_OPEN[0]] + _SAMPLE_OPEN[2:] + [_SAMPLE_LEFT])
+
+    def test_5b_a_tolerance_changed_after_signoff_is_a_new_draft(self, downloads, reconciled):
+        from src.signoff import STALE_CAPTION
+        at = reconciled
+        _sign(at, "A. Reviewer")
+        # Reconcile pressed again on the same inputs: the same result, still FINAL
+        at.button(key="btn_reconcile").click().run()
+        assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
+        # The page recomputes from the inputs as they stand, so a changed
+        # tolerance gives a new DRAFT at once, never a stale one.
+        at.number_input(key="tol_abs").set_value(0.03).run()
+        assert not at.exception
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        assert _boxes(at) == [("p5_reviewer", "A. Reviewer"), ("p5_sign", "")]
+        (button,) = _signoff_buttons(at)
+        assert not button.disabled
+        assert STALE_CAPTION not in [c.value for c in at.caption]
+        # Back to the first tolerance: still a DRAFT until signed again
+        at.number_input(key="tol_abs").set_value(0.02).run()
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        assert "Tolerance: 0.02 (absolute)" in _pdf_text(
+            downloads(at, "Download the DRAFT PDF"))
+
+    def test_5b_new_explanations_after_signoff_are_a_new_draft(self, stand_in_anthropic):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        at.sidebar.text_input(key="byo_api_key").input(_TEST_KEY).run()
+        at.button(key="btn_reconcile").click().run()
+        _sign(at)                                   # signed on the template's text
+        at.button(key="btn_draft").click().run()    # the model's text replaces it
+        assert not at.exception
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        assert _boxes(at) == [("p5_reviewer", "José Núñez"), ("p5_sign", "")]
+
+    def test_5b_names_print_safely(self, downloads, reconciled):
+        import html
+        from src.signoff import NAME_LIMIT, clean_name, pdf_name, when_text
+        at = reconciled
+        typed = "Zoë 李 <b>R&D</b>\x07" + "x" * 100
+        _sign(at, typed)
+        signed = at.session_state["p5_signed_off"]
+        assert signed.name == clean_name(typed) and len(signed.name) == NAME_LIMIT
+        assert signed.name.startswith("Zoë 李 <b>R&D</b>xxx")
+        # On screen as typed, escaped; in the PDF as its fonts print it, never as markup
+        assert _signoff_section(at)[2] == "{}&nbsp; {}".format(
+            _FINAL_CHIP, html.escape(signed.line))
+        final = "".join(_pdf_text(downloads(at, "Download the FINAL PDF")).split())
+        status = "FINAL: signed off by {} on {}".format(
+            pdf_name(signed.name), when_text(signed.signed_at))
+        assert status.startswith("FINAL: signed off by Zoë ? <b>R&D</b>xxx")
+        assert "".join(status.split()) in final
+
+    def test_5b_nothing_outstanding_signs_as_reconciled(self, downloads):
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180)
+        at.session_state["p5_resolutions"] = dict(_sample_resolved(72.00).resolutions)
+        at.session_state["reconciled"] = True
+        at.run()
+        section = _signoff_section(at)
+        assert section == ["##### Sign-off", _SENTENCE, _DRAFT_CHIP, "Nothing is outstanding."]
+        _sign(at)
+        assert at.session_state["recon_audit"][0]["acknowledged_at_sign_off"] == []
+        final = _pdf_text(downloads(at, "Download the FINAL PDF"))
+        assert "RECONCILED Remaining unexplained 0.00" in final
+
+    def test_5b_worked_example_is_signed_by_a_controller(self, downloads):
+        # The owner's decision: the example is signed by the series' sample
+        # reviewer. Otherwise its PDF reads as on main (0f28fca).
+        import hashlib
+        import re
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(_RECON_PAGE), default_timeout=180).run()
+        text = _pdf_text(downloads(at, "Download example report (PDF)"))
+        status = "FINAL: signed off by A. Controller on 30 June 2026 at 15:05 UTC"
+        line = "Signed off by A. Controller on 30 June 2026 at 15:05 UTC."
+        assert status + " RECONCILED WITH 1 OPEN ITEM Remaining unexplained" in text
+        assert line + " This reconciliation was prepared" in text
+        assert "Signed off: " not in text and "DRAFT: not signed off" not in text
+        # The rest as on main, apart from the time it was generated. Page
+        # furniture (the footers, the repeated table header) is left out: the
+        # status line moves one row of the breaks table to page 2.
+        as_on_main = text.replace(status + " ", "").replace(
+            line, "Signed off: 30 June 2026 15:05 UTC")
+        body = re.sub(r"Bank Statement vs Cash Book Page \d+ "
+                      r"|Type Side A Side B Difference Resolution ", "", as_on_main)
+        body = re.sub(r"Generated: \d{1,2} [A-Za-z]+ \d{4} \d\d:\d\d UTC",
+                      "Generated: <time>", body)
+        assert hashlib.sha256(body.encode("utf-8")).hexdigest() == (
+            "0d11bdd956c73819bcc0a287e7a7dd7d175b75daa94fa875a8913409d56ed20f")
+        # The example tab shows no sign-off text on screen.
+        assert not [m for m in at.tabs[0].markdown if "igned off" in m.value]
+
+    def test_5b_cli_pdf_is_unchanged(self, tmp_path):
+        # The CLI has no sign-off: its PDF carries no status line and reads
+        # exactly as on main (0f28fca) apart from the time it was generated.
+        import hashlib
+        import re
+        from config import TOLERANCE_ABS, TOLERANCE_REL
+        from src.step5_narrate import narrate
+        from src.step7_record import record
+        record(narrate(_classified_sample()), tmp_path,
+               tolerance_abs=float(TOLERANCE_ABS), tolerance_rel=float(TOLERANCE_REL))
+        (pdf,) = tmp_path.glob("*.pdf")
+        text = _pdf_text(pdf.read_bytes())
+        assert "DRAFT: not signed off" not in text and "FINAL:" not in text
+        assert "Generated: " in text and " WORKING COPY, NOT YET SIGNED OFF " in text
+        masked = re.sub(r"Generated: \d{1,2} [A-Za-z]+ \d{4} \d\d:\d\d UTC",
+                        "Generated: <time>", text)
+        assert masked.count("Generated: <time>") == 2
+        assert hashlib.sha256(masked.encode("utf-8")).hexdigest() == (
+            "578189bfb3a7eef482b916b27708e7b6242871af6668994fb775f2065fdb5935")
+
+    def test_5b_audit_record_is_pure(self):
+        # Built without Streamlit running: the row and its sign-off, nothing else
+        from datetime import datetime, timezone
+        from src.signoff import sign_off
+        from streamlit_app.lib.audit import build_audit_record
+        signed, _ = sign_off("A. Reviewer", "SIGN",
+                             now=datetime(2026, 10, 21, 9, 5, tzinfo=timezone.utc))
+        row = build_audit_record(_classified_sample(), signed, ["One open item."])
+        assert row["status"] == "final" and row["signed_off_by"] == "A. Reviewer"
+        assert row["signed_off_at"] == "2026-10-21T09:05:00+00:00"
+        assert row["acknowledged_at_sign_off"] == ["One open item."]
+        assert row["break_count"] == 8 and row["reconciliation_id"]
+
+    def test_5b_wording(self, app_shell):
+        at, _ = app_shell
+        values = [getattr(e, "value", "") for e in at.main.children.values()]
+        what = values[values.index("#### What it does") + 1]
+        promise = values[values.index("#### The governance promise") + 1]
+        assert what.splitlines()[-1] == (
+            "- You decide every resolution, and the PDF report is a DRAFT until a named "
+            "reviewer signs it.")
+        assert promise.splitlines()[-1] == (
+            "- **The reviewer signs.** Nothing is final until a named reviewer reads it "
+            "and signs.")
+        stale = ["working copy until you sign", "until a reviewer reads it",
+                 "Sign off reconciliation", "Sign off and downloads",
+                 "stops at flagging for review", "no sign-off step", "nobody approves"]
+        for path in [ROOT / "README.md", *(ROOT / "streamlit_app").rglob("*.py"),
+                     *(ROOT / "src").glob("*.py")]:
+            text = path.read_text(encoding="utf-8")
+            assert not [s for s in stale if s in text], path.name

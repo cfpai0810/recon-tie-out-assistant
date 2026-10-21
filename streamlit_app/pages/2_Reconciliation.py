@@ -1,12 +1,15 @@
 # =============================================================================
 # pages/2_Reconciliation.py: the reconciliation surface
 # =============================================================================
-# Phase D: AI explanations (key-gated, conversation-style), sign-off action,
-# and reconciliation-report PDF download. All deterministic matching and
+# Phase D: AI explanations (key-gated, conversation-style), the Sign-off
+# section (the rule in src/signoff.py, after Project 6), and the
+# reconciliation-report PDF download. All deterministic matching and
 # resolution controls from Phase C remain unchanged.
 # =============================================================================
 
+import hashlib
 import html as _html
+import json
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -21,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from streamlit_app.lib.theme import (
     header_html, inject_css, break_badge_html, resolution_badge_html,
-    DARK_BLUE, MUTED, RULE,
+    status_chip_html, DARK_BLUE, MUTED, RULE,
 )
 from streamlit_app.lib.key_gate import render_key_gate
 from streamlit_app.lib.errors import friendly_message, model_failure_message
@@ -39,7 +42,8 @@ from src.step6_resolve import (
     adjusted_part, adjustment_refusal,
 )
 from src.step5_narrate import narrate, _build_ai_prompt, _templated_draft
-from src.step7_record import build_pdf_bytes
+from src.step7_record import _audit_record, build_pdf_bytes
+from src.signoff import SCOPE_NOTE, WORD_HELP, WORD_LABEL, SignOff, sign_off
 from src.state import Break, BreakType, MatchType, ResolutionType, Resolution
 
 
@@ -396,15 +400,20 @@ def _render_position_panel(state):
 def _open_item_count(state):
     """Breaks still open, counted as the PDF report counts its open items: no
     resolution yet, under investigation, or adjusted by less than the break."""
-    count = 0
+    return len(_open_items(state))
+
+
+def _open_items(state):
+    """The open breaks themselves, in the page's order (see _open_item_count)."""
+    items = []
     for brk in state.breaks:
         res = state.resolutions.get(brk.stable_break_key)
         if res is None or res.resolution_type == ResolutionType.INVESTIGATE:
-            count += 1
+            items.append(brk)
         elif (res.resolution_type == ResolutionType.ADJUST
               and adjusted_part(brk, res) != Decimal(str(brk.difference))):
-            count += 1
-    return count
+            items.append(brk)
+    return items
 
 
 # =============================================================================
@@ -416,8 +425,15 @@ _PENDING_KEY = "p5_pending_adjust"
 _DRAFTS_KEY = "p5_ai_drafts"
 _PROMPTS_KEY = "p5_ai_prompts"
 _FAILURE_KEY = "p5_ai_failure"
-_SIGNED_OFF_KEY = "p5_signed_off"
 _REJECTED_M2O_KEY = "p5_rejected_m2o"
+
+# The Sign-off section: the sign-off that stands (a SignOff), the result it
+# was signed for (a fingerprint), the two boxes, and the last refusal
+_SIGNED_OFF_KEY = "p5_signed_off"
+_SIGNED_FOR_KEY = "p5_signed_for"
+_REVIEWER_KEY = "p5_reviewer"
+_SIGN_KEY = "p5_sign"
+_REFUSAL_KEY = "p5_signoff_refusal"
 
 if _RES_KEY not in st.session_state:
     st.session_state[_RES_KEY] = {}
@@ -740,6 +756,127 @@ def _render_resolved_compact(brk, state):
 
 
 # =============================================================================
+# SIGN-OFF (after Project 6: the rule and its messages live in src/signoff.py)
+# =============================================================================
+
+_BREAK_WORDS = {
+    BreakType.AMOUNT_MISMATCH: "Amount mismatch",
+    BreakType.REFERENCE_MISMATCH: "Reference mismatch",
+    BreakType.UNMATCHED: "Unmatched",
+    BreakType.MANY_TO_ONE_SUGGESTION: "Many-to-one suggestion",
+}
+
+
+def _outstanding(state):
+    """What is outstanding before sign-off: one line per open item, as
+    _open_item_count counts them, then the amount left unexplained. Empty
+    when nothing is outstanding. Nothing here blocks signing."""
+    lines = []
+    unexplained = Decimal("0")
+    for brk in _open_items(state):
+        diff = Decimal(str(brk.difference))
+        res = state.resolutions.get(brk.stable_break_key)
+        refs = ", ".join(dict.fromkeys(
+            r.reference for r in brk.side_a_records + brk.side_b_records
+            if r.reference))
+        what = "{} {}".format(_BREAK_WORDS[brk.break_type], refs).strip()
+        head = "{}, difference {:,.2f}: ".format(what, diff)
+        if res is None:
+            lines.append(head + "not yet resolved.")
+            unexplained += diff
+        elif res.resolution_type == ResolutionType.INVESTIGATE:
+            lines.append(head + "under investigation.")
+            unexplained += diff
+        else:   # adjusted by less than the break
+            part = adjusted_part(brk, res)
+            lines.append(head + "adjusted {:,.2f}, {:,.2f} still unexplained.".format(
+                part, diff - part))
+            unexplained += diff - part
+    if lines:
+        lines.append("Remaining unexplained: {:,.2f}.".format(unexplained))
+    return lines
+
+
+def _fingerprint(state, tolerance_abs, tolerance_rel):
+    """The result as the PDF prints it, as one hash: the tolerances, the
+    matches, and every break with its decision and its explanation (the
+    audit record without its run time). A sign-off stands only while this
+    is unchanged."""
+    record = _audit_record(state, tolerance_abs=tolerance_abs,
+                           tolerance_rel=tolerance_rel)
+    del record["run_id"]
+    text = json.dumps(record, sort_keys=True, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _sign_off(state, fingerprint, outstanding):
+    """The Sign off button (on_click, as in Project 6). The rule decides; the
+    page keeps the sign-off, the result it was signed for, and the audit row."""
+    signed, refusal = sign_off(
+        st.session_state.get(_REVIEWER_KEY), st.session_state.get(_SIGN_KEY),
+        already_signed=_SIGNED_OFF_KEY in st.session_state)
+    if refusal:
+        st.session_state[_REFUSAL_KEY] = refusal
+        return
+    st.session_state[_SIGNED_OFF_KEY] = signed
+    st.session_state[_SIGNED_FOR_KEY] = fingerprint
+    record_run(state, signed, outstanding)
+
+
+def _render_signoff(state, tolerance_abs, tolerance_rel):
+    """The Sign-off section: DRAFT with the boxes and the button, or FINAL
+    and read only. A result that changed after sign-off is a new DRAFT."""
+    fingerprint = _fingerprint(state, tolerance_abs, tolerance_rel)
+    signed = st.session_state.get(_SIGNED_OFF_KEY)
+    if signed is not None and st.session_state.get(_SIGNED_FOR_KEY) != fingerprint:
+        # The name stays filled in; SIGN must be typed again.
+        del st.session_state[_SIGNED_OFF_KEY]
+        del st.session_state[_SIGNED_FOR_KEY]
+        st.session_state[_REVIEWER_KEY] = signed.name
+        st.session_state[_SIGN_KEY] = ""
+        signed = None
+    refusal = st.session_state.pop(_REFUSAL_KEY, None)
+
+    st.markdown("##### Sign-off")
+    st.markdown("Signing says you have reviewed the breaks and your decisions above.")
+    pdf_bytes = build_pdf_bytes(state, signoff=signed,
+                                tolerance_abs=tolerance_abs,
+                                tolerance_rel=tolerance_rel)
+
+    if signed is not None:
+        st.markdown("{}&nbsp; {}".format(
+            status_chip_html("final"), _html.escape(signed.line)),
+            unsafe_allow_html=True)
+        if refusal:
+            st.warning(refusal)
+        st.download_button("Download the FINAL PDF", data=pdf_bytes,
+                           file_name="reconciliation_report.pdf",
+                           mime="application/pdf", key="dl_pdf_live")
+        st.caption(SCOPE_NOTE)
+        return
+
+    st.markdown(status_chip_html("draft"), unsafe_allow_html=True)
+    outstanding = _outstanding(state)
+    if outstanding:
+        st.markdown("Outstanding before you sign:")
+        st.markdown("\n".join("{}. {}".format(i, line) for i, line
+                              in enumerate(outstanding[:-1], start=1)))
+        st.markdown(outstanding[-1])
+    else:
+        st.markdown("Nothing is outstanding.")
+    st.text_input("Reviewer name", key=_REVIEWER_KEY)
+    st.text_input(WORD_LABEL, key=_SIGN_KEY, help=WORD_HELP)
+    st.button("Sign off", key="btn_signoff", type="primary", on_click=_sign_off,
+              args=(state, fingerprint, outstanding))
+    st.caption(SCOPE_NOTE)
+    if refusal:
+        st.warning(refusal)
+    st.download_button("Download the DRAFT PDF", data=pdf_bytes,
+                       file_name="reconciliation_report.pdf",
+                       mime="application/pdf", key="dl_pdf_live")
+
+
+# =============================================================================
 # WORKED EXAMPLE: pre-computed resolutions (all five types)
 # =============================================================================
 
@@ -994,45 +1131,12 @@ with tab_live:
 
         st.markdown("---")
 
-        # -- Sign off and downloads (Phase D) -----------------------------
-        st.markdown("##### Sign off and downloads")
-
-        signed_off_at = st.session_state.get(_SIGNED_OFF_KEY)
-
-        if signed_off_at:
-            st.success(
-                "Reconciliation signed off: {}".format(signed_off_at))
-        else:
-            n_unresolved = _open_item_count(recon_state)
-            if n_unresolved > 0:
-                st.info(
-                    "{} break{} still open. You can still sign off; "
-                    "the report will note them as unresolved.".format(
-                        n_unresolved,
-                        "s" if n_unresolved != 1 else ""))
-            if st.button("Sign off reconciliation", key="btn_signoff",
-                          type="primary"):
-                ts = datetime.now(timezone.utc).strftime(
-                    "%d %B %Y %H:%M UTC")
-                st.session_state[_SIGNED_OFF_KEY] = ts
-                record_run(recon_state)
-                st.rerun()
-
+        # -- Sign-off and the PDF (Phase D) -------------------------------
         for brk in recon_state.breaks:
             draft, _ = _get_draft(brk, recon_state)
             recon_state.drafts[brk.stable_break_key] = draft
 
-        pdf_bytes = build_pdf_bytes(
-            recon_state, signed_off_at=signed_off_at,
-            tolerance_abs=float(tol_abs_val),
-            tolerance_rel=float(tol_rel_val))
-        st.download_button(
-            "Download reconciliation report (PDF)",
-            data=pdf_bytes,
-            file_name="reconciliation_report.pdf",
-            mime="application/pdf",
-            key="dl_pdf_live",
-        )
+        _render_signoff(recon_state, float(tol_abs_val), float(tol_rel_val))
 
     else:
         st.info(
@@ -1084,8 +1188,9 @@ with tab_example:
         draft, _ = _get_draft(brk, example_state)
         example_state.drafts[brk.stable_break_key] = draft
 
-    example_pdf = build_pdf_bytes(
-        example_state, signed_off_at="30 June 2026 15:05 UTC")
+    # Signed by the series' sample reviewer, as Project 6's example is
+    example_pdf = build_pdf_bytes(example_state, signoff=SignOff(
+        "A. Controller", datetime(2026, 6, 30, 15, 5, tzinfo=timezone.utc)))
     st.download_button(
         "Download example report (PDF)",
         data=example_pdf,
