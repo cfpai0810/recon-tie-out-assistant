@@ -7,3 +7,6 @@ anthropic==0.116.0
 python-dotenv==1.2.2
 reportlab==5.0.0
 pandas==3.0.3
+# Pinned past GHSA-6q48-6c7w-9gw2: the bundle before 2026.10.18 trusts
+# compromised emSign intermediates
+certifi==2026.10.19

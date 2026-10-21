@@ -2014,6 +2014,13 @@ class TestManyToOneConfirmation:
 class TestDeploymentPins:
     """The web server stack the live app installs."""
 
+    def test_item22_certifi_has_the_fixed_root_bundle(self):
+        # certifi before 2026.10.18 trusts emSign ECC Root CA G3, whose
+        # intermediates had compromised keys (GHSA-6q48-6c7w-9gw2).
+        text = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(
+            encoding="utf-8-sig")
+        assert "certifi==2026.10.19" in text.split()
+
     def test_item1_starlette_pinned_for_streamlit_1_60(self):
         """Streamlit 1.60 cannot serve images with starlette 1.8 or later (item 1)."""
         from importlib.metadata import version
