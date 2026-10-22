@@ -2481,6 +2481,10 @@ class TestTabularFigures:
                  for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", inject_css())]
         body_rule = next(body for sel, body in rules if sel.startswith("html, body"))
         assert "tnum" not in body_rule and '"cv05" 1' in body_rule
+        # Lists, bold, italics and captions in Inter too, as Project 6's
+        # theme sets them (5b fix round)
+        body_sel = next(sel for sel, body in rules if sel.startswith("html, body"))
+        assert body_sel.endswith("th, ul, ol, li, strong, em, caption")
         numeric = [sel for sel, body in rules if "tnum" in body]
         assert len(numeric) == 1
         selectors = [s.strip() for s in numeric[0].split(",")]

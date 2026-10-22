@@ -355,7 +355,7 @@ data/
 
 tests/
   test_pipeline.py               197 tests
-  test_signoff.py                8 tests: the sign-off rule
+  test_signoff.py                9 tests: the sign-off rule
 
 output/                          Generated files (gitignored)
 ```
@@ -375,7 +375,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-205 tests, no real API calls:
+206 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
