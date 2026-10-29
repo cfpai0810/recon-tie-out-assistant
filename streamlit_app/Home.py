@@ -19,17 +19,28 @@ if str(ROOT) not in sys.path:
 from streamlit_app.lib.theme import header_html, inject_css
 from streamlit_app.lib.key_gate import render_key_gate
 
-PAGES_DIR = Path(__file__).resolve().parent / "pages"
+# The view files live in a folder NOT named "pages", so Streamlit's automatic
+# pages/ navigation never triggers and st.navigation() below is the sole nav
+# (with these explicit titles and this order, not file names). A folder named
+# pages/ beside this script would let Streamlit run a page without this script
+# (its older multipage mode) when a page address is the first request.
+VIEWS_DIR = Path(__file__).resolve().parent / "views"
 
 # The pages, built once so Home's links and the navigation share them. Titles
-# are in sentence case; each address still comes from its file name.
-HOW_IT_WORKS = st.Page(str(PAGES_DIR / "1_How_the_Model_Works.py"),
+# are in sentence case. Each page's address is pinned: links to them are
+# published (the README, posts), and a renamed or moved file must not change
+# them.
+HOW_IT_WORKS = st.Page(str(VIEWS_DIR / "1_How_the_Model_Works.py"),
+                       url_path="How_the_Model_Works",
                        title="How it works", icon=":material/menu_book:")
-RECONCILIATION = st.Page(str(PAGES_DIR / "2_Reconciliation.py"),
+RECONCILIATION = st.Page(str(VIEWS_DIR / "2_Reconciliation.py"),
+                         url_path="Reconciliation",
                          title="Reconciliation", icon=":material/balance:")
-OWN_DATA = st.Page(str(PAGES_DIR / "3_Your_Own_Data.py"),
+OWN_DATA = st.Page(str(VIEWS_DIR / "3_Your_Own_Data.py"),
+                   url_path="Your_Own_Data",
                    title="Your own data", icon=":material/upload_file:")
-HOW_ITS_BUILT = st.Page(str(PAGES_DIR / "4_How_Its_Built.py"),
+HOW_ITS_BUILT = st.Page(str(VIEWS_DIR / "4_How_Its_Built.py"),
+                        url_path="How_Its_Built",
                         title="How it's built", icon=":material/build:")
 
 

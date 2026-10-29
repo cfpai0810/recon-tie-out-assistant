@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/1_How_the_Model_Works.py: user-facing explanation of the tool
+# views/1_How_the_Model_Works.py: user-facing explanation of the tool
 # =============================================================================
 
 import sys

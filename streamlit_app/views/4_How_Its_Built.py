@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/4_How_Its_Built.py: the technical and governance story
+# views/4_How_Its_Built.py: the technical and governance story
 # =============================================================================
 # Two audiences on one page. Part 1 is for a finance leader: why an
 # AI-assisted reconciliation tool can be trusted (the separated layers,

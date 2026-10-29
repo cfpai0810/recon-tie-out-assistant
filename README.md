@@ -343,7 +343,7 @@ streamlit_app/
     claude_client.py             BYO-key client builder
     audit.py                     Session audit: build_audit_record, record_run
     errors.py                    Friendly API error messages
-  pages/
+  views/
     1_How_the_Model_Works.py     Plain-language explanation of the tool
     2_Reconciliation.py          The tool: matching, breaks, resolution, sign-off, PDF
     3_Your_Own_Data.py           Schema, accepted formats, run commands, limits
@@ -354,7 +354,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               197 tests
+  test_pipeline.py               199 tests
   test_signoff.py                9 tests: the sign-off rule
 
 output/                          Generated files (gitignored)
@@ -375,7 +375,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-206 tests, no real API calls:
+208 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

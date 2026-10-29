@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/3_Your_Own_Data.py: running the reconciliation on your own data
+# views/3_Your_Own_Data.py: running the reconciliation on your own data
 # =============================================================================
 
 import sys

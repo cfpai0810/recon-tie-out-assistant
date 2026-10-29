@@ -2148,7 +2148,7 @@ class TestModelCall:
 
 _TEST_KEY = "sk-ant-api03-" + "x" * 90
 _HOME = ROOT / "streamlit_app" / "Home.py"
-_RECON_PAGE = ROOT / "streamlit_app" / "pages" / "2_Reconciliation.py"
+_RECON_PAGE = ROOT / "streamlit_app" / "views" / "2_Reconciliation.py"
 
 # One stand-in SDK error per failure code, built without a network call.
 _MODEL_ERRORS = [
@@ -2217,8 +2217,8 @@ class TestKeyGate:
         at.sidebar.text_input(key="byo_api_key").input(_TEST_KEY).run()
         assert isinstance(at.session_state["live_client"], _StandInAnthropic)
         # A page without the gate, then the page that runs the model.
-        at.switch_page("pages/1_How_the_Model_Works.py").run()
-        at.switch_page("pages/2_Reconciliation.py").run()
+        at.switch_page("views/1_How_the_Model_Works.py").run()
+        at.switch_page("views/2_Reconciliation.py").run()
         assert not at.exception
         assert isinstance(at.session_state["live_client"], _StandInAnthropic)
         assert at.sidebar.text_input(key="byo_api_key").value == _TEST_KEY
@@ -2530,8 +2530,8 @@ class TestExampleTab:
         # After the button has been used once, the page link opens the same tab.
         at = AppTest.from_file(str(_HOME), default_timeout=180).run()
         at.button(key="btn_worked_example").click().run()
-        at.switch_page("pages/1_How_the_Model_Works.py").run()
-        at.switch_page("pages/2_Reconciliation.py").run()
+        at.switch_page("views/1_How_the_Model_Works.py").run()
+        at.switch_page("views/2_Reconciliation.py").run()
         assert not at.exception
         assert _tab_sets(at.main)[0].proto.tab_container.default_tab_index == 0
 
@@ -2589,15 +2589,15 @@ class TestSignOffCount:
 
 # ── STEP 5a: LOOK AND LAYOUT, AS PROJECT 6 (V1 TO V5) ───────────────
 
-_PAGES = ROOT / "streamlit_app" / "pages"
+_VIEWS = ROOT / "streamlit_app" / "views"
 
 # Every page and the title its banner carries, in the navigation order.
 _BANNERS = [
     (_HOME, "Reconciliation and Tie-Out Assistant"),
-    (_PAGES / "1_How_the_Model_Works.py", "How it works"),
-    (_PAGES / "2_Reconciliation.py", "Reconciliation"),
-    (_PAGES / "3_Your_Own_Data.py", "Your own data"),
-    (_PAGES / "4_How_Its_Built.py", "How it's built"),
+    (_VIEWS / "1_How_the_Model_Works.py", "How it works"),
+    (_VIEWS / "2_Reconciliation.py", "Reconciliation"),
+    (_VIEWS / "3_Your_Own_Data.py", "Your own data"),
+    (_VIEWS / "4_How_Its_Built.py", "How it's built"),
 ]
 
 
@@ -2719,7 +2719,7 @@ class TestStep5aLook:
         assert titles == ["Home", "How it works", "Reconciliation", "Your own data",
                           "How it's built"]
         assert all(t == t[0] + t[1:].lower() for t in titles)
-        assert sorted(p.name for p in _PAGES.glob("*.py")) == [
+        assert sorted(p.name for p in _VIEWS.glob("*.py")) == [
             "1_How_the_Model_Works.py", "2_Reconciliation.py", "3_Your_Own_Data.py",
             "4_How_Its_Built.py"]
 
@@ -3087,3 +3087,42 @@ class TestStep5bSignOff:
                      *(ROOT / "src").glob("*.py")]:
             text = path.read_text(encoding="utf-8")
             assert not [s for s in stale if s in text], path.name
+
+
+# ── STEP 6a: THE COLD-START DEEP LINK ───────────────────────────────
+
+class TestStep6aDeepLink:
+    """A page opened as the first request runs inside Home, at its published address."""
+
+    def test_6a_no_pages_folder_under_the_app(self):
+        # A folder named pages/ beside Home.py switches on Streamlit's older
+        # multipage mode: a page opened as a fresh server's first request runs
+        # without Home, with file names in the sidebar. The views live in views/.
+        app = ROOT / "streamlit_app"
+        assert not [p for p in app.rglob("*") if p.is_dir() and p.name.lower() == "pages"]
+        assert sorted(p.name for p in (app / "views").glob("*.py")) == [
+            "1_How_the_Model_Works.py", "2_Reconciliation.py", "3_Your_Own_Data.py",
+            "4_How_Its_Built.py"]
+
+    def test_6a_every_page_address_is_pinned(self, app_shell):
+        # The addresses are published (the README, posts), so each st.Page in
+        # Home.py names its own with url_path: a renamed or moved file cannot
+        # move it. Home is the default page, at /.
+        import ast
+        tree = ast.parse(_HOME.read_text(encoding="utf-8"))
+        found = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "Page":
+                kwargs = {k.arg: k.value.value for k in node.keywords
+                          if isinstance(k.value, ast.Constant)}
+                found.append((node.lineno, kwargs.get("url_path"), kwargs["title"]))
+        assert [(url, title) for _, url, title in sorted(found)] == [
+            ("How_the_Model_Works", "How it works"),
+            ("Reconciliation", "Reconciliation"),
+            ("Your_Own_Data", "Your own data"),
+            ("How_Its_Built", "How it's built"),
+            (None, "Home"),
+        ]
+        _, seen = app_shell
+        assert [url for url, _, _ in seen["pages"]] == [
+            "", "How_the_Model_Works", "Reconciliation", "Your_Own_Data", "How_Its_Built"]

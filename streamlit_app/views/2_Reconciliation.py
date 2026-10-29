@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/2_Reconciliation.py: the reconciliation surface
+# views/2_Reconciliation.py: the reconciliation surface
 # =============================================================================
 # Phase D: AI explanations (key-gated, conversation-style), the Sign-off
 # section (the rule in src/signoff.py, after Project 6), and the
