@@ -13,15 +13,15 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import (
-    header_html, inject_css, DARK_BLUE, MID_BLUE, MUTED, SANS,
-)
+from streamlit_app.lib.theme import header_html, inject_css
+from streamlit_app.lib.governance_layers import governance_layers_html
+from streamlit_app.lib.lock_lifecycle import lock_lifecycle_html
+from streamlit_app.lib.pipeline_flow import pipeline_flow_html
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
@@ -52,47 +52,7 @@ st.write(
 
 st.markdown("**The work happens in separated layers.**")
 
-_PIPELINE_SVG = f"""
-<svg viewBox="0 0 780 120" xmlns="http://www.w3.org/2000/svg"
-     style="width:100%;max-width:780px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <rect x="2" y="30" width="86" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="112" y="30" width="86" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="222" y="30" width="86" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="332" y="30" width="86" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="442" y="30" width="86" height="60" rx="6" fill="#EAF3DE" stroke="#1D6B0F" stroke-width="1.5"/>
-  <rect x="552" y="30" width="86" height="60" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
-  <rect x="662" y="30" width="86" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <text x="45" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Load</text>
-  <text x="45" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">CSV files</text>
-  <text x="155" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Validate</text>
-  <text x="155" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">row checks</text>
-  <text x="265" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Match</text>
-  <text x="265" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">5 rules</text>
-  <text x="375" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Classify</text>
-  <text x="375" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">typed breaks</text>
-  <text x="485" y="55" text-anchor="middle" fill="#1D6B0F" font-size="11" font-weight="bold">Narrate</text>
-  <text x="485" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">AI draft</text>
-  <text x="595" y="55" text-anchor="middle" fill="#854F0B" font-size="11" font-weight="bold">Resolve</text>
-  <text x="595" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">human choice</text>
-  <text x="705" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Record</text>
-  <text x="705" y="72" text-anchor="middle" fill="{MUTED}" font-size="8">PDF, audit</text>
-  <line x1="90" y1="60" x2="110" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <line x1="200" y1="60" x2="220" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <line x1="310" y1="60" x2="330" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <line x1="420" y1="60" x2="440" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <line x1="530" y1="60" x2="550" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <line x1="640" y1="60" x2="660" y2="60" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#ap)"/>
-  <text x="265" y="18" text-anchor="middle" fill="{MID_BLUE}" font-size="9">deterministic</text>
-  <text x="375" y="18" text-anchor="middle" fill="{MID_BLUE}" font-size="9">deterministic</text>
-  <text x="485" y="18" text-anchor="middle" fill="#1D6B0F" font-size="9">optional</text>
-  <text x="595" y="18" text-anchor="middle" fill="#854F0B" font-size="9">you decide</text>
-  <defs><marker id="ap" viewBox="0 0 10 10" refX="10" refY="5"
-    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-    <path d="M 0 0 L 10 5 L 0 10 z" fill="{MID_BLUE}"/></marker></defs>
-</svg>
-"""
-
-components.html(_PIPELINE_SVG, height=130, scrolling=False)
+st.markdown(pipeline_flow_html(), unsafe_allow_html=True)
 st.caption(
     "The seven phases in order. In the web app, narration is optional "
     "and the controller reviews the breaks before choosing to invoke it.")
@@ -107,22 +67,7 @@ st.write(
 
 st.markdown("**Three layers, three levels of trust.**")
 
-_GOVERNANCE_SVG = f"""
-<svg viewBox="0 0 600 192" xmlns="http://www.w3.org/2000/svg"
-     style="width:100%;max-width:600px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <rect x="2" y="2" width="596" height="56" rx="6" fill="#EAF2FB" stroke="{MID_BLUE}" stroke-width="1.5"/>
-  <text x="16" y="24" fill="{DARK_BLUE}" font-size="12" font-weight="bold">Deterministic Python</text>
-  <text x="16" y="44" fill="{MUTED}" font-size="10">All matching, classification, and arithmetic. Same inputs, same result.</text>
-  <rect x="2" y="66" width="596" height="56" rx="6" fill="#EAF3DE" stroke="#1D6B0F" stroke-width="1.5"/>
-  <text x="16" y="88" fill="#1D6B0F" font-size="12" font-weight="bold">AI narration (optional, on request)</text>
-  <text x="16" y="108" fill="{MUTED}" font-size="10">Explains each break in plain language. Does not decide what is a break.</text>
-  <rect x="2" y="130" width="596" height="56" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
-  <text x="16" y="152" fill="#854F0B" font-size="12" font-weight="bold">Human reviewer (authority)</text>
-  <text x="16" y="172" fill="{MUTED}" font-size="10">Chooses resolution per break. Confirms adjustments. Signs off.</text>
-</svg>
-"""
-
-components.html(_GOVERNANCE_SVG, height=200, scrolling=False)
+st.markdown(governance_layers_html(), unsafe_allow_html=True)
 st.caption(
     "The trust boundary runs between these layers. The model reads what "
     "Python has classified and writes prose; it never touches the matching "
@@ -192,35 +137,7 @@ st.markdown("---")
 
 # -- Lock persistence ---------------------------------------------------------
 st.markdown("#### Lock persistence and re-run guard")
-_LIFECYCLE_SVG = f"""
-<svg viewBox="0 0 600 100" xmlns="http://www.w3.org/2000/svg"
-     style="width:100%;max-width:600px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <rect x="2" y="18" width="100" height="38" rx="6" fill="#EAF2FB" stroke="{MID_BLUE}" stroke-width="1.5"/>
-  <text x="52" y="42" text-anchor="middle" fill="{DARK_BLUE}" font-size="11" font-weight="bold">Open</text>
-  <rect x="146" y="18" width="100" height="38" rx="6" fill="#EAF3DE" stroke="#1D6B0F" stroke-width="1.5"/>
-  <text x="196" y="42" text-anchor="middle" fill="#1D6B0F" font-size="11" font-weight="bold">Drafted</text>
-  <rect x="290" y="18" width="100" height="38" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
-  <text x="340" y="42" text-anchor="middle" fill="#854F0B" font-size="11" font-weight="bold">Resolved</text>
-  <rect x="434" y="18" width="100" height="38" rx="6" fill="#EAF3DE" stroke="#1D6B0F" stroke-width="1.5"/>
-  <text x="484" y="42" text-anchor="middle" fill="#1D6B0F" font-size="11" font-weight="bold">Locked</text>
-  <line x1="104" y1="37" x2="144" y2="37" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#al)"/>
-  <line x1="248" y1="37" x2="288" y2="37" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#al)"/>
-  <line x1="392" y1="37" x2="432" y2="37" stroke="{MID_BLUE}" stroke-width="1.5" marker-end="url(#al)"/>
-  <text x="124" y="12" text-anchor="middle" fill="{MUTED}" font-size="8">narrate</text>
-  <text x="268" y="12" text-anchor="middle" fill="{MUTED}" font-size="8">resolve</text>
-  <text x="412" y="12" text-anchor="middle" fill="{MUTED}" font-size="8">persist</text>
-  <path d="M 484 58 L 484 80 L 52 80 L 52 58" fill="none" stroke="{MUTED}" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#al_m)"/>
-  <text x="268" y="76" text-anchor="middle" fill="{MUTED}" font-size="8">flagged as stale and re-opened if figures change</text>
-  <defs>
-    <marker id="al" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="{MID_BLUE}"/></marker>
-    <marker id="al_m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="{MUTED}"/></marker>
-  </defs>
-</svg>
-"""
-
-components.html(_LIFECYCLE_SVG, height=100, scrolling=False)
+st.markdown(lock_lifecycle_html(), unsafe_allow_html=True)
 
 st.write(
     "Locked resolutions (everything except INVESTIGATE) are saved to a "

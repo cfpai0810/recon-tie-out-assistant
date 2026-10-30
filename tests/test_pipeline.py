@@ -3126,3 +3126,347 @@ class TestStep6aDeepLink:
         _, seen = app_shell
         assert [url for url, _, _ in seen["pages"]] == [
             "", "How_the_Model_Works", "Reconciliation", "Your_Own_Data", "How_Its_Built"]
+
+
+# ── STEP 6c: THE DIAGRAMS, READABLE ON A PHONE ──────────────────────
+#
+# The three diagrams on How it's built were SVG in fixed-height frames, so on a
+# phone their text shrank to about 4 px and a blank gap followed. They are now
+# HTML lists drawn by lib/flow_diagram.py, the series' shared renderer, which
+# Step 6c extends for this page: words on the arrows, a path back from the last
+# stage to the first, layers with no arrows, and a larger row minimum, which
+# the seven boxes ask for.
+# The page tests read How it's built as AppTest renders it; the renderer tests
+# call it directly.
+
+from html.parser import HTMLParser
+
+_BLUE, _GREEN, _AMBER = ("#2D6A9F", "#EAF2FB"), ("#1D6B0F", "#EAF3DE"), ("#854F0B", "#FAEEDA")
+
+# Each diagram as the SVG drew it: every box's words in order as (title, text,
+# foot, words on the arrow into it), and its stroke and fill. The words the SVG
+# set above four pipeline boxes are each box's foot now.
+_PIPELINE_6C = {
+    "label": "The seven phases in order: Load, from the CSV files; Validate, with row "
+             "checks; Match, by 5 rules, deterministic; Classify, into typed breaks, "
+             "deterministic; Narrate, an AI draft, optional; Resolve, a human choice, "
+             "you decide; and Record, the PDF and audit.",
+    "ol": "fd-flow fd-row680", "li": "fd-stage",
+    "stages": [("Load", "CSV files", None, None),
+               ("Validate", "row checks", None, None),
+               ("Match", "5 rules", "deterministic", None),
+               ("Classify", "typed breaks", "deterministic", None),
+               ("Narrate", "AI draft", "optional", None),
+               ("Resolve", "human choice", "you decide", None),
+               ("Record", "PDF, audit", None, None)],
+    "colours": [_BLUE, _BLUE, _BLUE, _BLUE, _GREEN, _AMBER, _BLUE],
+    "back": None,
+}
+_LAYERS_6C = {
+    "label": "Three layers, three levels of trust, with the trust boundary between "
+             "them: deterministic Python does all matching, classification, and "
+             "arithmetic, with the same result from the same inputs; AI narration, "
+             "optional and on request, explains each break in plain language and does "
+             "not decide what is a break; and the human reviewer, the authority, "
+             "chooses the resolution per break, confirms adjustments and signs off.",
+    "ol": "fd-layers", "li": "fd-layer",
+    "stages": [("Deterministic Python",
+                "All matching, classification, and arithmetic. Same inputs, same result.",
+                None, None),
+               ("AI narration (optional, on request)",
+                "Explains each break in plain language. Does not decide what is a break.",
+                None, None),
+               ("Human reviewer (authority)",
+                "Chooses resolution per break. Confirms adjustments. Signs off.",
+                None, None)],
+    "colours": [_BLUE, _GREEN, _AMBER],
+    "back": None,
+}
+_LIFECYCLE_6C = {
+    "label": "Lock persistence and re-run guard: a break goes from Open to Drafted "
+             "(narrate), to Resolved (resolve), to Locked (persist); a locked break is "
+             "flagged as stale and re-opened if figures change.",
+    "ol": "fd-flow fd-worded fd-loop", "li": "fd-stage",
+    "stages": [("Open", None, None, None),
+               ("Drafted", None, None, "narrate"),
+               ("Resolved", None, None, "resolve"),
+               ("Locked", None, None, "persist")],
+    "colours": [_BLUE, _GREEN, _AMBER, _GREEN],
+    "back": "flagged as stale and re-opened if figures change",
+}
+
+
+class _Diagram6c(HTMLParser):
+    """One diagram's HTML read back: the list's class and accessible name, each
+    stage's class, colours and parts by class, the path back's words, and the
+    heading, note and colour key if any."""
+
+    def __init__(self, markup):
+        super().__init__()
+        self.ol, self.label, self.stages, self.back = None, None, [], None
+        self.head, self.note, self.key = None, None, []
+        self._open = []
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = (attrs.get("class") or "").split()
+        if tag == "ol" and self.ol is None:
+            self.ol, self.label = attrs.get("class"), attrs.get("aria-label")
+        if tag == "li" and {"fd-stage", "fd-layer"} & set(classes):
+            style = dict(part.split(":") for part in attrs["style"].split(";"))
+            self.stages.append({"class": attrs["class"],
+                                "colours": (style["border-color"], style["background"])})
+        if tag == "p" and "fd-return" in classes:
+            self.back = ""
+        self._open.append(classes)
+
+    def handle_endtag(self, tag):
+        self._open.pop()
+
+    def handle_data(self, data):
+        classes = self._open[-1] if self._open else []
+        if ["fd-return"] in self._open:
+            self.back += data
+            return
+        words = data.strip()
+        if not words:
+            return
+        if ["fd-key"] in self._open:
+            self.key.append(words)
+        elif "fd-head" in classes:
+            self.head = words
+        elif "fd-note" in classes:
+            self.note = words
+        elif classes and classes[0] in ("fd-zone", "fd-arrow", "fd-title", "fd-text",
+                                        "fd-foot"):
+            self.stages[-1][classes[0]] = words
+
+
+@pytest.fixture(scope="class")
+def how_its_built_6c():
+    """How it's built as AppTest renders it, and its diagrams read back in page
+    order."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(_HOME), default_timeout=180).run()
+    at.switch_page("views/4_How_Its_Built.py").run()
+    assert not at.exception
+    flows = [_Diagram6c(m.value) for m in at.main.markdown
+             if m.value.startswith('<figure class="fd">')]
+    return at, flows
+
+
+def _check_6c(flow, expected):
+    """A diagram has the expected name, kind, words in order, and colours."""
+    assert flow.label == expected["label"]
+    assert flow.ol == expected["ol"]
+    assert [s["class"] for s in flow.stages] == [expected["li"]] * len(expected["stages"])
+    assert [(s.get("fd-title"), s.get("fd-text"), s.get("fd-foot"), s.get("fd-arrow"))
+            for s in flow.stages] == expected["stages"]
+    assert [s["colours"] for s in flow.stages] == expected["colours"]
+    assert flow.back == expected["back"]
+    assert (flow.head, flow.note, flow.key) == (None, None, [])
+
+
+class TestStep6cDiagrams:
+    """The three diagrams on How it's built, as HTML lists readable on a phone."""
+
+    def test_6c_diagrams_are_html_lists_not_frames(self, how_its_built_6c):
+        import re
+        at, flows = how_its_built_6c
+        assert not at.get("iframe"), "no fixed-height frame left on the page"
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        # Each sits where its frame was, just under its lead-in, and the two
+        # captions that followed a frame follow its list, unchanged
+        values = [getattr(e, "value", None) for e in at.main.children.values()]
+        figures = [i for i, v in enumerate(values)
+                   if isinstance(v, str) and v.startswith('<figure class="fd">')]
+        leads = ["**The work happens in separated layers.**",
+                 "**Three layers, three levels of trust.**",
+                 "#### Lock persistence and re-run guard"]
+        assert figures == [values.index(lead) + 1 for lead in leads]
+        assert values[figures[0] + 1] == (
+            "The seven phases in order. In the web app, narration is optional "
+            "and the controller reviews the breaks before choosing to invoke it.")
+        assert values[figures[1] + 1] == (
+            "The trust boundary runs between these layers. The model reads what "
+            "Python has classified and writes prose; it never touches the matching "
+            "or the arithmetic.")
+        # The diagram CSS is in inject_css: stacked on a phone, a row from 640
+        # px, and no text in a diagram under 13 px
+        from streamlit_app.lib import flow_diagram, theme
+        css = flow_diagram.flow_css(theme.DARK_BLUE, theme.MUTED, theme.RULE)
+        assert css in theme.inject_css()
+        assert "@media (min-width: 640px)" in css and "ol.fd-flow" in css
+        sizes = [int(s) for s in re.findall(r"font-size: (\d+)px", css)]
+        assert sizes and min(sizes) >= 13
+        # The renderer imports nothing from an app, so it copies byte for byte,
+        # and the page draws no SVG of its own
+        source = Path(flow_diagram.__file__).read_text(encoding="utf-8")
+        assert "import streamlit_app" not in source and "from streamlit_app" not in source
+        page = (_VIEWS / "4_How_Its_Built.py").read_text(encoding="utf-8")
+        assert "components" not in page and "<svg" not in page
+
+    def test_6c_pipeline_seven_phases_in_order(self, how_its_built_6c):
+        _, flows = how_its_built_6c
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        _check_6c(flows[0], _PIPELINE_6C)
+
+    def test_6c_governance_layers_in_order(self, how_its_built_6c):
+        _, flows = how_its_built_6c
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        _check_6c(flows[1], _LAYERS_6C)
+
+    def test_6c_lock_lifecycle_in_order_with_its_path_back(self, how_its_built_6c):
+        _, flows = how_its_built_6c
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        _check_6c(flows[2], _LIFECYCLE_6C)
+
+
+class TestStep6cRenderer:
+    """lib/flow_diagram.py, extended for this page: an existing call draws as
+    before, and each new kind is asked for by a new optional field or argument."""
+
+    _A, _B = ("#1A3A5C", "#EAF2FB"), ("#2D6A9F", "#E6F1FB")
+
+    def _stages(self, n=3, arrows=()):
+        from streamlit_app.lib.flow_diagram import Role, Stage
+        roles = [Role(*self._A), Role(*self._B)]
+        return tuple(Stage(f"STAGE {i + 1}", f"text {i + 1}", "", roles[i % 2],
+                           arrow=arrows[i] if i < len(arrows) and arrows[i] else "")
+                     for i in range(n))
+
+    def test_6c_existing_calls_draw_exactly_as_before(self):
+        # The two strings below are what the unextended renderer (sha256
+        # c7f576770aabe6da, the one Projects 1 to 4 share) draws for the same
+        # calls, kept verbatim: no new class, no new markup.
+        from streamlit_app.lib.flow_diagram import Boundary, Role, Stage, flow_html
+        a, b = Role(*self._A), Role(*self._B)
+        stages = (Stage("FIRST STEP", "Check it & sign", "the person", a),
+                  Stage("SECOND", "Kept as is", "", b), Stage("THIRD", "", "the record", b))
+        assert flow_html('Name: "it" & more', stages) == (
+            '<figure class="fd"><ol class="fd-flow" aria-label="Name: &quot;it&quot; &amp; '
+            'more"><li class="fd-stage" style="border-color:#1A3A5C;background:#EAF2FB">'
+            '<span class="fd-title" style="color:#1A3A5C">FIRST STEP</span> <span class="'
+            'fd-text">Check it &amp; sign</span> <span class="fd-foot" style="color:#1A3A5C'
+            '">the person</span></li><li class="fd-stage" style="border-color:#2D6A9F;'
+            'background:#E6F1FB"><span class="fd-title" style="color:#2D6A9F">SECOND</span>'
+            ' <span class="fd-text">Kept as is</span></li><li class="fd-stage" style="'
+            'border-color:#2D6A9F;background:#E6F1FB"><span class="fd-title" style="color:'
+            '#2D6A9F">THIRD</span> <span class="fd-foot" style="color:#2D6A9F">the record'
+            '</span></li></ol></figure>')
+        assert flow_html("Name", stages, heading="Heading", note="A note.",
+                         key=((a, "One"), (b, "Two")),
+                         boundary=Boundary(1, "Zone one", "Zone two")) == (
+            '<figure class="fd"><p class="fd-head">Heading</p><ol class="fd-flow fd-zoned" '
+            'aria-label="Name"><li class="fd-stage" style="border-color:#1A3A5C;background:'
+            '#EAF2FB"><span class="fd-zone">Zone one</span> <span class="fd-title" style="'
+            'color:#1A3A5C">FIRST STEP</span> <span class="fd-text">Check it &amp; sign'
+            '</span> <span class="fd-foot" style="color:#1A3A5C">the person</span></li><li '
+            'class="fd-stage fd-cross" style="border-color:#2D6A9F;background:#E6F1FB">'
+            '<span class="fd-zone">Zone two</span> <span class="fd-title" style="color:'
+            '#2D6A9F">SECOND</span> <span class="fd-text">Kept as is</span></li><li class="'
+            'fd-stage" style="border-color:#2D6A9F;background:#E6F1FB"><span class="'
+            'fd-title" style="color:#2D6A9F">THIRD</span> <span class="fd-foot" style="'
+            'color:#2D6A9F">the record</span></li></ol><p class="fd-note">A note.</p><ul '
+            'class="fd-key"><li><span class="fd-swatch" aria-hidden="true" style="'
+            'border-color:#1A3A5C;background:#EAF2FB"></span> One</li><li><span class="'
+            'fd-swatch" aria-hidden="true" style="border-color:#2D6A9F;background:#E6F1FB">'
+            '</span> Two</li></ul></figure>')
+
+    def test_6c_css_keeps_every_rule_and_only_adds(self):
+        import hashlib
+        import re
+        from streamlit_app.lib import flow_diagram, theme
+        css = flow_diagram.flow_css(theme.DARK_BLUE, theme.MUTED, theme.RULE)
+        # The first 4313 characters are the unextended renderer's CSS for these
+        # colours, byte for byte (Project 1 renders the same, as flow_css.css)
+        assert hashlib.sha256(css[:4313].encode("utf-8")).hexdigest() == (
+            "81a1a1b943aa80de9d8cad8d415117d3da8492014ae6d2d55ae494b457ba5232")
+        assert css[4312:4314] == "\n\n"
+        # Everything after adds rules, each under a class no earlier diagram has
+        new = {"fd-worded", "fd-arrow", "fd-loop", "fd-return", "fd-nobr", "fd-layers",
+               "fd-layer"} | {f"fd-row{width}" for width in flow_diagram.ROW_MINS}
+        added = re.sub(r"/\*.*?\*/", "", css[4313:], flags=re.S)
+        rules = re.findall(r"([^{}]+)\{[^{}]*\}", added)
+        assert len(rules) == 20 + 10 * len(flow_diagram.ROW_MINS)
+        for selectors in rules:
+            for selector in selectors.split(","):
+                assert new & set(re.findall(r"\.(fd-[a-z0-9]+)", selector)), selector
+        sizes = [int(s) for s in re.findall(r"font-size: (\d+)px", added)]
+        assert sizes and min(sizes) >= 13
+
+    def test_6c_words_on_an_arrow(self):
+        from streamlit_app.lib.flow_diagram import ARROW_GAP, flow_css, flow_html
+        html = flow_html("Name", self._stages(3, arrows=(None, "go on", "")))
+        flow = _Diagram6c(html)
+        assert flow.ol == "fd-flow fd-worded"
+        assert [s.get("fd-arrow") for s in flow.stages] == [None, "go on", None]
+        # The words come first in their stage's item, before its title
+        assert ('<li class="fd-stage" style="border-color:#2D6A9F;background:#E6F1FB">'
+                '<span class="fd-arrow">go on</span> <span class="fd-title"') in html
+        # There is no arrow into the first stage, so no words for one
+        with pytest.raises(ValueError):
+            flow_html("Name", self._stages(2, arrows=("before the first",)))
+        css = flow_css("#000000", "#777777", "#CCCCCC")
+        assert ".fd ol.fd-flow .fd-arrow {" in css and "white-space: nowrap;" in css
+        assert f"margin: 0 0 0 {ARROW_GAP}px;" in css and ARROW_GAP == 64
+
+    def test_6c_a_path_back_from_the_last_stage_to_the_first(self):
+        from streamlit_app.lib.flow_diagram import flow_css, flow_html
+        html = flow_html("Name", self._stages(3), back="sent back if re-checked")
+        flow = _Diagram6c(html)
+        assert flow.ol == "fd-flow fd-loop" and flow.back == "sent back if re-checked"
+        # After the list, with the number of stages for the CSS, and each
+        # hyphenated word kept on one line
+        assert html.endswith(
+            '</ol><p class="fd-return" style="--fd-n:3">sent back if '
+            '<span class="fd-nobr">re-checked</span></p></figure>')
+        with pytest.raises(ValueError):
+            flow_html("Name", self._stages(1), back="nowhere to go")
+        css = flow_css("#000000", "#777777", "#CCCCCC")
+        assert ".fd ol.fd-flow.fd-loop::before {" in css and ".fd p.fd-return {" in css
+        assert "var(--fd-n)" in css and ".fd .fd-nobr { white-space: nowrap; }" in css
+
+    def test_6c_layers_with_no_arrows(self):
+        from streamlit_app.lib.flow_diagram import Boundary, flow_css, flow_html
+        html = flow_html("Name", self._stages(3), layers=True)
+        flow = _Diagram6c(html)
+        assert flow.ol == "fd-layers" and "fd-flow" not in html
+        assert [s["class"] for s in flow.stages] == ["fd-layer"] * 3
+        assert [s["fd-title"] for s in flow.stages] == ["STAGE 1", "STAGE 2", "STAGE 3"]
+        for kwargs in ({"back": "back"}, {"row_min": 680},
+                       {"boundary": Boundary(1, "one", "two")}):
+            with pytest.raises(ValueError):
+                flow_html("Name", self._stages(3), layers=True, **kwargs)
+        with pytest.raises(ValueError):
+            flow_html("Name", self._stages(3, arrows=(None, "on")), layers=True)
+        css = flow_css("#000000", "#777777", "#CCCCCC")
+        assert ".fd ol.fd-layers > li.fd-layer {" in css and "gap: 8px;" in css
+
+    def test_6c_a_larger_row_minimum(self):
+        from streamlit_app.lib.flow_diagram import ROW_MINS, Boundary, flow_css, flow_html
+        # The widths on offer are fixed, so the CSS is fixed: 660 px (Project
+        # 4's governance flow) and 680 px (this page's seven phases)
+        assert ROW_MINS == (660, 680)
+        css = flow_css("#000000", "#777777", "#CCCCCC")
+        for width in ROW_MINS:
+            html = flow_html("Name", self._stages(7), row_min=width)
+            assert _Diagram6c(html).ol == f"fd-flow fd-row{width}"
+            # Stacked from 600 px up to the minimum, a boundary included; from
+            # there a row in which no box is narrower than its longest word
+            assert f"@container fd (min-width: 600px) and (width < {width}px) {{" in css
+            assert f".fd ol.fd-flow.fd-row{width} > li.fd-cross::after {{" in css
+            assert (f"@container fd (min-width: {width}px) {{\n"
+                    f"        .fd ol.fd-flow.fd-row{width} > li.fd-stage "
+                    f"{{ min-width: auto; }}") in css
+            zoned = flow_html("Name", self._stages(3), row_min=width,
+                              boundary=Boundary(1, "one", "two"))
+            assert _Diagram6c(zoned).ol == f"fd-flow fd-zoned fd-row{width}"
+        for width in (600, 640, 700, "660", 660.0, True):
+            with pytest.raises(ValueError):
+                flow_html("Name", self._stages(7), row_min=width)
+        with pytest.raises(ValueError):
+            flow_html("Name", self._stages(7), row_min=680, back="back")
+        with pytest.raises(ValueError):
+            flow_html("Name", self._stages(7, arrows=(None, "on")), row_min=680)

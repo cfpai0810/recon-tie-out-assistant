@@ -339,6 +339,10 @@ streamlit_app/
   Home.py                        Entry point, landing page, API key gate
   lib/
     theme.py                     Palette, CSS, banner, badge and status chip helpers
+    flow_diagram.py              Diagram renderer shared by the series: HTML lists, readable on a phone
+    pipeline_flow.py             The seven phases diagram
+    governance_layers.py         The three layers diagram
+    lock_lifecycle.py            The lock lifecycle diagram
     key_gate.py                  Sidebar API key input
     claude_client.py             BYO-key client builder
     audit.py                     Session audit: build_audit_record, record_run
@@ -354,7 +358,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               199 tests
+  test_pipeline.py               209 tests
   test_signoff.py                9 tests: the sign-off rule
 
 output/                          Generated files (gitignored)
@@ -375,7 +379,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-208 tests, no real API calls:
+218 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt
