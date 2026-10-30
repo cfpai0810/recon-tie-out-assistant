@@ -3470,3 +3470,28 @@ class TestStep6cRenderer:
             flow_html("Name", self._stages(7), row_min=680, back="back")
         with pytest.raises(ValueError):
             flow_html("Name", self._stages(7, arrows=(None, "on")), row_min=680)
+
+
+# ── STEP 7b: WIDTH IN PLACE OF USE_CONTAINER_WIDTH ──────────────────
+#
+# Streamlit 1.60 logs a deprecation line each time st.dataframe is given
+# use_container_width, on every run of the page, and the argument is to be
+# removed. width="stretch" is exactly what use_container_width=True set, so
+# the tables look and behave as before.
+
+class TestStep7bWidth:
+    """No call in the app passes use_container_width."""
+
+    def test_step7b_no_use_container_width(self):
+        import ast
+        files = sorted((ROOT / "streamlit_app").rglob("*.py"))
+        files += sorted((ROOT / "src").rglob("*.py")) if (ROOT / "src").is_dir() else []
+        files += [ROOT / "main.py"] if (ROOT / "main.py").is_file() else []
+        assert _RECON_PAGE in files and _HOME in files
+        found = []
+        for path in files:
+            for node in ast.walk(ast.parse(path.read_bytes(), filename=str(path))):
+                if isinstance(node, ast.Call):
+                    found += ["{}:{}".format(path.relative_to(ROOT).as_posix(), k.lineno)
+                              for k in node.keywords if k.arg == "use_container_width"]
+        assert found == [], "use_container_width at " + ", ".join(found)

@@ -358,7 +358,7 @@ data/
   cash_book.csv                  20 book records (side B), sample month
 
 tests/
-  test_pipeline.py               209 tests
+  test_pipeline.py               210 tests
   test_signoff.py                9 tests: the sign-off rule
 
 output/                          Generated files (gitignored)
@@ -379,7 +379,7 @@ changed) are flagged for re-review rather than silently reapplied.
 
 ## Test suite
 
-218 tests, no real API calls:
+219 tests, no real API calls:
 
 ```bash
 pip install -r requirements-dev.txt

@@ -119,7 +119,7 @@ def _render_inputs():
         if _raw_rows_a:
             st.dataframe(
                 pd.DataFrame(_raw_rows_a, columns=_raw_cols_a),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 height=530,
             )
@@ -130,7 +130,7 @@ def _render_inputs():
         if _raw_rows_b:
             st.dataframe(
                 pd.DataFrame(_raw_rows_b, columns=_raw_cols_b),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 height=530,
             )
@@ -163,7 +163,7 @@ def _render_inputs():
                 if _mr_a:
                     st.dataframe(
                         pd.DataFrame(_mr_a, columns=_mc_a),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
             with mc2:
@@ -171,7 +171,7 @@ def _render_inputs():
                 if _mr_b:
                     st.dataframe(
                         pd.DataFrame(_mr_b, columns=_mc_b),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
             if st.button("Reconcile messy data", key="btn_reconcile_messy"):
